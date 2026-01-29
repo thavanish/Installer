@@ -117,7 +117,7 @@ install_panel() {
     cd /var/www || err "Cannot access /var/www"
     info "Deleting your old panel folder if it exists last warning.. (wait 5 secs)"
     sleep 5
-    git clone https://github.com/thavanish/panel.git || err "Clone failed"
+    git clone https://github.com/airlinklabs/panel.git&>/dev/null || err "Clone failed"
     cd panel
 
     # Set permissions
@@ -138,7 +138,7 @@ SESSION_SECRET=$(openssl rand -hex 32)
 EOF
     
     # Install and build
-    info "Installing dependencies..."
+    info "Installing dependencies this may take a while..."
     npm install --omit=dev &>/dev/null || err "npm install failed"
     
     if command -v prisma &>/dev/null; then
@@ -163,7 +163,8 @@ EOF
     info "Building Panel..."
     npm run build  || err "Build failed"
     
-    
+    info "Seeding images..."
+    npm run seed
     # Create systemd service
     info "Creating and starting Systemd service..."
     cat > /etc/systemd/system/airlink-panel.service << EOF
@@ -204,7 +205,7 @@ install_daemon() {
     info "Deleting your old daemon folder if it exists last warning.. (wait 5 secs)"
     sleep 5
     rm -rf dameon
-    git clone -q --depth 1 https://github.com/thavanish/daemon.git || err "Clone failed"
+    git clone -q --depth 1 https://github.com/airlinklabs/daemon.git || err "Clone failed"
     cd daemon
     info "Creating .env"
     # Create .env
@@ -217,11 +218,16 @@ version=1.0.0
 environment=development
 STATS_INTERVAL=10000
 EOF
-    info "Installing dependencies..."
+    info "Installing dependencies this may take a while..."
     npm install --omit=dev &>/dev/null || err "npm install failed"
     npm install express
     info "Building Dameon"
     npm run build || err "Build failed"
+    info "doing some misc stuff..."
+    cd libs
+    npm install
+    npm rebuild
+    cd ..
     info "Setting permissions"
     chown -R www-data:www-data /etc/daemon
     info "Creating and starting systemd Service"
@@ -244,6 +250,25 @@ EOF
     
     systemctl daemon-reload
     systemctl enable --now airlink-daemon &>/dev/null
+
+# recommend addons
+while true; do
+        choice=$(dialog --title "Do you want to install a addon to the panel?" --menu "Choose action:" 20 60 13 \
+            1 "Install Both (https://github.com/g-flame-oss/airlink-addons/tree/modrinth-addon)" \
+            2 "Install Panel (https://github.com/g-flame-oss/airlink-addons/tree/parachute)" \
+            3 "install both" \
+            4 "no" \
+            0 "Exit" 3>&1 1>&2 2>&3) || break
+        
+        case $choice in
+            1) install_modrinth;;
+            2) install_parachute;;
+            3) install_both;;
+            4) ;;
+            0) clear;;
+        esac
+    done
+    clear
     
     ok "Daemon installed on port ${DAEMON_PORT}"
 }
@@ -300,6 +325,30 @@ show_status() {
     
     dialog --msgbox "=== Airlink Status ===\n\nPanel: ${PANEL_STATUS}\nDaemon: ${DAEMON_STATUS}\n\nNode.js: ${NODE_VER}\nDocker: ${DOCKER_VER}\n\nOS: ${OS} ${VER}\nPackage Manager: ${PKG}" 16 50
     clear
+}
+
+install_modrinth() {
+cd /var/www/panel/storage/addons/
+ok "cloning repo..."
+git clone --branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git modrinth-store
+cd /var/www/panel/storage/addons/modrinth-store
+ok "Installing dependencies this may take a while..."
+sudo npm install
+ok "Building addon.."
+sudo npm run build
+ok "Continuing..."
+}
+
+install_parachute() {
+cd /var/www/panel/storage/addons/
+ok "cloning repo..."
+git clone --branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git parachute
+cd /var/www/panel/storage/addons/parachute
+ok "Installing dependencies this may take a while..."
+sudo npm install
+ok "Building addon.."
+sudo npm run build
+ok "Continuing..."
 }
 
 # Main menu
