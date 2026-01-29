@@ -1,4 +1,4 @@
-#!/bin/bas
+#!/bin/bash
 
 set -euo pipefail
 
@@ -190,7 +190,25 @@ EOF
     
     systemctl daemon-reload
     systemctl enable --now airlink-panel &>/dev/null
-    
+
+    # recommend addons
+while true; do
+        choice=$(dialog --title "Do you want to install a addon to the panel?" --menu "Choose action:" 20 60 13 \
+            1 "Install Both (https://github.com/g-flame-oss/airlink-addons/tree/modrinth-addon)" \
+            2 "Install Panel (https://github.com/g-flame-oss/airlink-addons/tree/parachute)" \
+            3 "install both" \
+            4 "no" \
+            0 "Exit" 3>&1 1>&2 2>&3) || break
+        
+        case $choice in
+            1) install_modrinth;;
+            2) install_parachute;;
+            3) install_both_addons;;
+            4) ;;
+            0) clear;;
+        esac
+    done
+    clear
     ok "Panel installed on port ${PANEL_PORT}"
     
 }
@@ -259,24 +277,6 @@ EOF
     systemctl daemon-reload
     systemctl enable --now airlink-daemon &>/dev/null
 
-# recommend addons
-while true; do
-        choice=$(dialog --title "Do you want to install a addon to the panel?" --menu "Choose action:" 20 60 13 \
-            1 "Install Both (https://github.com/g-flame-oss/airlink-addons/tree/modrinth-addon)" \
-            2 "Install Panel (https://github.com/g-flame-oss/airlink-addons/tree/parachute)" \
-            3 "install both" \
-            4 "no" \
-            0 "Exit" 3>&1 1>&2 2>&3) || break
-        
-        case $choice in
-            1) install_modrinth;;
-            2) install_parachute;;
-            3) install_both;;
-            4) ;;
-            0) clear;;
-        esac
-    done
-    clear
     
     ok "Daemon installed on port ${DAEMON_PORT}"
 }
@@ -359,6 +359,10 @@ sudo npm run build
 ok "Continuing..."
 }
 
+install_both_addons() {
+install_modrinth
+install_parachute
+}
 # Main menu
 main_menu() {
     while true; do
