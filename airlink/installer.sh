@@ -299,7 +299,7 @@ EOF
     ok "Panel service started"
 
     if [ "$skip_config" = false ]; then
-        install_addons
+        install_addons true  # Pass true when called from installation
     fi
     ok "Panel installation completed on port ${PANEL_PORT}"
 }
@@ -409,7 +409,7 @@ install_all() {
     install_daemon true
     
     # Ask about addons at the end
-    install_addons
+    install_addons true
     
     dialog --msgbox "Installation Complete!\n\nPanel: http://$(hostname -I | awk '{print $1}'):3000\nDaemon: Running on port 3002\n\nCheck logs: journalctl -u airlink-panel -f" 14 60
     clear
@@ -482,24 +482,44 @@ show_status() {
     clear
 }
 
+
 # Install addons
 install_addons() {
-    while true; do
-        choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" 15 70 4 \
-            1 "Install Modrinth (https://github.com/g-flame-oss/airlink-addons)" \
-            2 "Install Parachute (https://github.com/g-flame-oss/airlink-addons)" \
-            3 "Install Both" \
-            4 "Skip" \
-            0 "Exit" 3>&1 1>&2 2>&3) || break
-        
-        case $choice in
-            1) install_modrinth;;
-            2) install_parachute;;
-            3) install_modrinth; install_parachute;;
-            4) break;;
-            0) clear; break;;
-        esac
-    done
+    local from_install=${1:-false}
+    
+    if [ "$from_install" = true ]; then
+        # Simplified menu when called from installation
+        while true; do
+            choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" 12 70 3 \
+                1 "Install Modrinth (https://github.com/g-flame-oss/airlink-addons)" \
+                2 "Install Parachute (https://github.com/g-flame-oss/airlink-addons)" \
+                3 "Skip" 3>&1 1>&2 2>&3) || break
+            
+            case $choice in
+                1) install_modrinth; break;;
+                2) install_parachute; break;;
+                3) break;;
+            esac
+        done
+    else
+        # Full menu when called from main menu
+        while true; do
+            choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" 15 70 5 \
+                1 "Install Modrinth (https://github.com/g-flame-oss/airlink-addons)" \
+                2 "Install Parachute (https://github.com/g-flame-oss/airlink-addons)" \
+                3 "Install Both" \
+                4 "Skip" \
+                0 "Exit" 3>&1 1>&2 2>&3) || break
+            
+            case $choice in
+                1) install_modrinth;;
+                2) install_parachute;;
+                3) install_modrinth; install_parachute;;
+                4) break;;
+                0) clear; break;;
+            esac
+        done
+    fi
     clear
 }
 
@@ -556,7 +576,7 @@ main_menu() {
             1) install_all;;
             2) setup_node; setup_docker; install_panel false;;
             3) setup_node; setup_docker; install_daemon false;;
-            4) install_addons;;
+            4) install_addons false;;
             5) setup_node; setup_docker;;
             6) dialog --yesno "Remove Panel?" 6 30 && remove_panel;;
             7) dialog --yesno "Remove Daemon?" 6 30 && remove_daemon;;
