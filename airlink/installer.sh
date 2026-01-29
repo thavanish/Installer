@@ -194,7 +194,7 @@ install_daemon() {
     clear
     info "Cloning Repo..."
     cd /etc || err "Cannot access /etc"
-    git clone -q --depth 1 https://github.com/airlinklabs/daemon.git || err "Clone failed"
+    git clone -q --depth 1 https://github.com/thavanish/daemon.git || err "Clone failed"
     cd daemon
     info "Creating .env"
     # Create .env
