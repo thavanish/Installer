@@ -115,7 +115,7 @@ install_panel() {
     cd /var/www || err "Cannot access /var/www"
     info "Deleting your old panel folder if it exists last warning.. (wait 5 secs)"
     sleep 5
-    git clone -q --depth 1 https://github.com/thavanish/panel.git || err "Clone failed"
+    git clone https://github.com/thavanish/panel.git || err "Clone failed"
     cd panel
 
     # Set permissions
@@ -127,10 +127,11 @@ install_panel() {
     rm example.env
     # Create .env
     cat > .env << EOF
-NODE_ENV=production
+NAME="Airlink"
+NODE_ENV="development"
+URL="http://localhost:${PANEL_PORT}"
 PORT=${PANEL_PORT}
 DATABASE_URL="file:./dev.db" 
-JWT_SECRET=$(openssl rand -hex 32)
 SESSION_SECRET=$(openssl rand -hex 32)
 EOF
     
@@ -172,9 +173,9 @@ After=network.target
 Type=simple
 User=www-data
 WorkingDirectory=/var/www/panel
-ExecStart=/usr/bin/node dist/app.js
+ExecStart=/usr/bin/npm run start
 Restart=always
-Environment=NODE_ENV=production
+
 
 [Install]
 WantedBy=multi-user.target
@@ -204,10 +205,13 @@ install_daemon() {
     info "Creating .env"
     # Create .env
     cat > .env << EOF
-NODE_ENV=production
-PORT=${DAEMON_PORT}
-AUTH_KEY=${DAEMON_KEY}
-DOCKER_SOCKET=/var/run/docker.sock
+remote="127.0.0.1"
+key=key
+port=${DAEMON_PORT}
+DEBUG=false
+version=1.0.0
+environment=development
+STATS_INTERVAL=10000
 EOF
     info "Installing dependencies..."
     npm install --omit=dev &>/dev/null || err "npm install failed"
@@ -227,9 +231,8 @@ After=network.target docker.service
 Type=simple
 User=root
 WorkingDirectory=/etc/daemon
-ExecStart=/usr/bin/node dist/index.js
+ExecStart=/usr/bin/npm run start
 Restart=always
-Environment=NODE_ENV=production
 
 [Install]
 WantedBy=multi-user.target
