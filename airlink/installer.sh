@@ -99,12 +99,12 @@ install_panel() {
     rm -rf panel
     git clone -q --depth 1 https://github.com/thavanish/panel.git || err "Clone failed"
     cd panel
-    
+    rm example.env
     # Create .env
     cat > .env << EOF
 NODE_ENV=production
 PORT=${PANEL_PORT}
-DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+DATABASE_URL="file:./dev.db"" 
 JWT_SECRET=$(openssl rand -hex 32)
 SESSION_SECRET=$(openssl rand -hex 32)
 EOF
