@@ -8,6 +8,7 @@ readonly LOG="/tmp/airlink.log"
 readonly NODE_VER="20"
 readonly TEMP="/tmp/airlink-tmp"
 readonly PRISMA_VER="6.19.1"
+
 # Colors
 R='\033[0;31m' G='\033[0;32m' Y='\033[1;33m' C='\033[0;36m' N='\033[0m'
 
@@ -20,6 +21,7 @@ err() { echo -e "${R}[ERROR]${N} $*"; log "ERROR: $*"; exit 1; }
 
 # Detect OS
 detect_os() {
+    info "Detecting operating system..."
     [[ -f /etc/os-release ]] && . /etc/os-release || err "Cannot detect OS"
     OS=$ID; VER=$VERSION_ID
     
@@ -30,108 +32,154 @@ detect_os() {
         alpine) FAM="alpine"; PKG="apk";;
         *) err "Unsupported OS: $OS";;
     esac
-    info "Detected: $OS ($FAM)"
+    ok "Detected: $OS ($FAM)"
 }
 
 # Package installation
 pkg_install() {
+    info "Installing packages: $*"
     case "$PKG" in
         apt) apt-get update -qq && apt-get install -y -qq "$@";;
         dnf|yum) $PKG install -y -q "$@";;
         pacman) pacman -Sy --noconfirm --quiet "$@";;
         apk) apk add --no-cache -q "$@";;
     esac
+    ok "Packages installed: $*"
 }
 
 # Check root
 [[ $EUID -eq 0 ]] || { dialog --msgbox "Run as root/sudo" 6 30 2>/dev/null || echo "Run as root"; exit 1; }
 clear
+
 # Detect system
 detect_os
 
 # Install dependencies
+info "Checking dependencies..."
 deps=(curl wget dialog git jq)
 missing=()
 for d in "${deps[@]}"; do command -v "$d" &>/dev/null || missing+=("$d"); done
-[[ ${#missing[@]} -gt 0 ]] && { info "Installing: ${missing[*]}"; pkg_install "${missing[@]}"; }
+if [[ ${#missing[@]} -gt 0 ]]; then
+    info "Installing missing dependencies: ${missing[*]}"
+    pkg_install "${missing[@]}"
+else
+    ok "All dependencies already installed"
+fi
 
 # Node.js setup
 setup_node() {
+    info "Setting up Node.js..."
     if command -v node &>/dev/null; then
         INSTALLED_VER=$(node -v | sed 's/v//' | cut -d. -f1)
         if [ "$INSTALLED_VER" = "$NODE_VER" ]; then
             ok "Node.js $NODE_VER already installed, skipping"
             return
         else
-            info "Node.js version mismatch (found $(node -v)), reinstalling $NODE_VER"
+            warn "Node.js version mismatch (found $(node -v)), reinstalling $NODE_VER"
         fi
     else
         info "Node.js not found, installing $NODE_VER"
     fi
+    
     case "$FAM" in
         debian)
+            info "Adding NodeSource repository..."
             curl -fsSL "https://deb.nodesource.com/setup_${NODE_VER}.x" | bash - &>/dev/null
             pkg_install nodejs
             ;;
         redhat)
+            info "Adding NodeSource repository..."
             curl -fsSL "https://rpm.nodesource.com/setup_${NODE_VER}.x" | bash - &>/dev/null
             pkg_install nodejs
             ;;
         arch) pkg_install nodejs npm ;;
         alpine) pkg_install nodejs npm ;;
     esac
+    
     if command -v node &>/dev/null; then
         ok "Node.js $(node -v) installed"
     else
         err "Node.js install failed"
     fi
-    npm list -g typescript &>/dev/null || \
-        npm install -g typescript &>/dev/null && ok "TypeScript installed"
+    
+    info "Checking TypeScript..."
+    if npm list -g typescript &>/dev/null; then
+        ok "TypeScript already installed"
+    else
+        info "Installing TypeScript globally..."
+        npm install -g typescript &>/dev/null
+        ok "TypeScript installed"
+    fi
 }
 
 # Docker setup
 setup_docker() {
     info "Checking for Docker..."
-    command -v docker &>/dev/null && { info "Docker already installed"; return 0; }
+    if command -v docker &>/dev/null; then
+        ok "Docker already installed"
+        return 0
+    fi
+    
     info "Installing Docker..."
     case "$FAM" in
-        debian|redhat) curl -fsSL https://get.docker.com | sh &>/dev/null;;
+        debian|redhat) 
+            info "Downloading Docker installation script..."
+            curl -fsSL https://get.docker.com | sh &>/dev/null
+            ;;
         arch) pkg_install docker;;
-        alpine) pkg_install docker; rc-update add docker boot &>/dev/null;;
+        alpine) 
+            pkg_install docker
+            info "Adding Docker to boot..."
+            rc-update add docker boot &>/dev/null
+            ;;
     esac
+    
+    info "Enabling Docker service..."
     systemctl enable --now docker &>/dev/null
-    command -v docker &>/dev/null && ok "Docker installed" || err "Docker install failed"
+    
+    if command -v docker &>/dev/null; then
+        ok "Docker installed successfully"
+    else
+        err "Docker install failed"
+    fi
 }
 
 # Panel installation
 install_panel() {
-    info "Installing Panel..."
+    info "Starting Panel installation..."
     
-     # Get configuration
+    # Get configuration
     PANEL_NAME=$(dialog --inputbox "Panel name" 8 40 "Airlink" 3>&1 1>&2 2>&3) || PANEL_NAME="Airlink"
     PANEL_PORT=$(dialog --inputbox "Panel Port" 8 40 "3000" 3>&1 1>&2 2>&3) || PANEL_PORT=3000
     clear
+    
     # Clone and setup
-    info "Cloning Repo"
+    info "Preparing directories..."
     [ -d /var/www ] || mkdir /var/www
     cd /var/www || err "Cannot access /var/www"
-    info "Deleting your old panel folder if it exists last warning..."
+    
+    info "Deleting old panel folder if it exists (last warning)..."
     for i in {5..1}; do
         echo -ne "\rWaiting: $i seconds remaining..."
         sleep 1
     done
     echo -e "\rProceeding...                    "
-    git clone https://github.com/airlinklabs/panel.git&>/dev/null || err "Clone failed"
+    
+    rm -rf panel
+    info "Cloning Panel repository..."
+    git clone https://github.com/airlinklabs/panel.git &>/dev/null || err "Clone failed"
+    ok "Repository cloned"
+    
     cd panel
 
     # Set permissions
-    info "Setting permissions"
+    info "Setting permissions..."
     chown -R www-data:www-data /var/www/panel
     chmod -R 755 /var/www/panel
+    ok "Permissions set"
     
-    info "Creating .env"
-    rm example.env
     # Create .env
+    info "Creating .env file..."
     cat > .env << EOF
 NAME=${PANEL_NAME}
 NODE_ENV="development"
@@ -140,37 +188,49 @@ PORT=${PANEL_PORT}
 DATABASE_URL="file:./dev.db" 
 SESSION_SECRET=$(openssl rand -hex 32)
 EOF
+    ok ".env file created"
     
-    # Install and build
-    info "Installing dependencies this may take a while..."
+    # Install dependencies
+    info "Installing npm dependencies (this may take a while)..."
     npm install --omit=dev &>/dev/null || err "npm install failed"
+    ok "Dependencies installed"
     
+    # Install Prisma
+    info "Checking Prisma installation..."
     if command -v prisma &>/dev/null; then
         INSTALLED_VER=$(prisma -v | grep "prisma" | head -n1 | awk '{print $2}')
         if [ "$INSTALLED_VER" = "$PRISMA_VER" ]; then
-            ok "Prisma $PRISMA_VER already installed, skipping"
+            ok "Prisma $PRISMA_VER already installed"
         else
-            info "Prisma version mismatch (found $INSTALLED_VER), reinstalling $PRISMA_VER"
+            warn "Prisma version mismatch (found $INSTALLED_VER), reinstalling $PRISMA_VER"
+            info "Uninstalling old Prisma..."
             npm uninstall -g prisma &>/dev/null
             npm uninstall prisma @prisma/client &>/dev/null
             npm cache clean --force &>/dev/null
+            info "Installing Prisma $PRISMA_VER..."
             npm install prisma@$PRISMA_VER @prisma/client@$PRISMA_VER &>/dev/null || err "Prisma install failed"
+            ok "Prisma $PRISMA_VER installed"
         fi
     else
-        info "Prisma not found, installing $PRISMA_VER"
+        info "Prisma not found, installing $PRISMA_VER..."
         npm install prisma@$PRISMA_VER @prisma/client@$PRISMA_VER &>/dev/null || err "Prisma install failed"
+        ok "Prisma $PRISMA_VER installed"
     fi
 
-    info "Running migrations..."
+    info "Running database migrations..."
     CI=true npm run migrate:dev &>/dev/null || err "Migration failed"
+    ok "Database migrations completed"
     
-    info "Building Panel..."
-    npm run build  || err "Build failed"
+    info "Building Panel  ..."
+    npm run build || err "Build failed"
+    ok "Panel build completed"
     
-    info "Seeding images..."
+    info "Seeding database with images..."
     npm run seed &>/dev/null || err "Seeding failed"
+    ok "Database seeded"
+    
     # Create systemd service
-    info "Creating and starting Systemd service..."
+    info "Creating systemd service..."
     cat > /etc/systemd/system/airlink-panel.service << EOF
 [Unit]
 Description=Airlink Panel
@@ -183,41 +243,48 @@ WorkingDirectory=/var/www/panel
 ExecStart=/usr/bin/npm run start
 Restart=always
 
-
 [Install]
 WantedBy=multi-user.target
 EOF
+    ok "Systemd service created"
     
+    info "Starting Panel service..."
     systemctl daemon-reload
     systemctl enable --now airlink-panel &>/dev/null
+    ok "Panel service started"
 
     install_addons
-    ok "Panel installed on port ${PANEL_PORT}"
-    
+    ok "Panel installation completed on port ${PANEL_PORT}"
 }
 
 # Daemon installation
 install_daemon() {
-    info "Installing Daemon..."
+    info "Starting Daemon installation..."
     
     PANEL_ADDRESS=$(dialog --inputbox "Panel ip/hostname" 8 40 "127.0.0.1" 3>&1 1>&2 2>&3) || PANEL_ADDRESS="127.0.0.1"
     DAEMON_PORT=$(dialog --inputbox "Daemon Port" 8 40 "3002" 3>&1 1>&2 2>&3) || DAEMON_PORT=3002
     DAEMON_KEY=$(dialog --inputbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
-    
     clear
-    info "Cloning Repo..."
+    
+    info "Preparing directories..."
     cd /etc || err "Cannot access /etc"
-    info "Deleting your old panel folder if it exists last warning..."
+    
+    info "Deleting old daemon folder if it exists (last warning)..."
     for i in {5..1}; do
         echo -ne "\rWaiting: $i seconds remaining..."
         sleep 1
     done
     echo -e "\rProceeding...                    "
-    rm -rf dameon
+    
+    rm -rf daemon
+    info "Cloning Daemon repository..."
     git clone -q --depth 1 https://github.com/airlinklabs/daemon.git || err "Clone failed"
+    ok "Repository cloned"
+    
     cd daemon
-    info "Creating .env"
+    
     # Create .env
+    info "Creating .env file..."
     cat > .env << EOF
 remote="127.0.0.1"
 key=key
@@ -227,20 +294,36 @@ version=1.0.0
 environment=development
 STATS_INTERVAL=10000
 EOF
-    info "Installing dependencies this may take a while..."
+    ok ".env file created"
+    
+    info "Installing npm dependencies (this may take a while)..."
     npm install --omit=dev &>/dev/null || err "npm install failed"
-    npm install express
-    info "Building Dameon"
+    ok "Dependencies installed"
+    
+    info "Installing express..."
+    npm install express &>/dev/null
+    ok "Express installed"
+    
+    info "Building Daemon..."
     npm run build || err "Build failed"
-    info "doing some misc stuff..."
+    ok "Daemon build completed"
+    
+    info "Building libs..."
     cd libs
-    npm install
-    npm rebuild
+    npm install &>/dev/null
+    ok "Libs dependencies installed"
+    
+    info "Rebuilding native modules..."
+    npm rebuild &>/dev/null
+    ok "Native modules rebuilt"
     cd ..
-    info "Setting permissions"
+    
+    info "Setting permissions..."
     chown -R www-data:www-data /etc/daemon
-    info "Creating and starting systemd Service"
+    ok "Permissions set"
+    
     # Create systemd service
+    info "Creating systemd service..."
     cat > /etc/systemd/system/airlink-daemon.service << EOF
 [Unit]
 Description=Airlink Daemon
@@ -256,16 +339,19 @@ Restart=always
 [Install]
 WantedBy=multi-user.target
 EOF
+    ok "Systemd service created"
     
+    info "Starting Daemon service..."
     systemctl daemon-reload
     systemctl enable --now airlink-daemon &>/dev/null
-
+    ok "Daemon service started"
     
-    ok "Daemon installed on port ${DAEMON_PORT}"
+    ok "Daemon installation completed on port ${DAEMON_PORT}"
 }
 
 # Install both
 install_all() {
+    info "Starting full installation (Node.js, Docker, Panel, Daemon)..."
     setup_node
     setup_docker
     install_panel
@@ -273,42 +359,66 @@ install_all() {
     
     dialog --msgbox "Installation Complete!\n\nPanel: http://$(hostname -I | awk '{print $1}'):3000\nDaemon: Running on port 3002\n\nCheck logs: journalctl -u airlink-panel -f" 14 60
     clear
+    ok "Full installation completed successfully"
 }
 
 # Uninstall functions
 remove_panel() {
     info "Removing Panel..."
+    info "Stopping Panel service..."
     systemctl stop airlink-panel &>/dev/null || true
+    info "Disabling Panel service..."
     systemctl disable airlink-panel &>/dev/null || true
+    info "Removing service file..."
     rm -f /etc/systemd/system/airlink-panel.service
+    info "Removing Panel directory..."
     rm -rf /var/www/panel
+    info "Reloading systemd..."
     systemctl daemon-reload
-    ok "Panel removed"
+    ok "Panel removed successfully"
 }
 
 remove_daemon() {
     info "Removing Daemon..."
+    info "Stopping Daemon service..."
     systemctl stop airlink-daemon &>/dev/null || true
+    info "Disabling Daemon service..."
     systemctl disable airlink-daemon &>/dev/null || true
+    info "Removing service file..."
     rm -f /etc/systemd/system/airlink-daemon.service
-    rm -rf /var/www/daemon
+    info "Removing Daemon directory..."
+    rm -rf /etc/daemon
+    info "Reloading systemd..."
     systemctl daemon-reload
-    ok "Daemon removed"
+    ok "Daemon removed successfully"
 }
 
 remove_deps() {
     info "Removing dependencies..."
     case "$FAM" in
-        debian) apt-get remove -y nodejs npm docker.io &>/dev/null;;
-        redhat) $PKG remove -y nodejs npm docker &>/dev/null;;
-        arch) pacman -R --noconfirm nodejs npm docker &>/dev/null;;
-        alpine) apk del nodejs npm docker &>/dev/null;;
+        debian) 
+            info "Removing Node.js, npm, and Docker..."
+            apt-get remove -y nodejs npm docker.io &>/dev/null
+            ;;
+        redhat) 
+            info "Removing Node.js, npm, and Docker..."
+            $PKG remove -y nodejs npm docker &>/dev/null
+            ;;
+        arch) 
+            info "Removing Node.js, npm, and Docker..."
+            pacman -R --noconfirm nodejs npm docker &>/dev/null
+            ;;
+        alpine) 
+            info "Removing Node.js, npm, and Docker..."
+            apk del nodejs npm docker &>/dev/null
+            ;;
     esac
-    ok "Dependencies removed"
+    ok "Dependencies removed successfully"
 }
 
 # Status check
 show_status() {
+    info "Checking system status..."
     PANEL_STATUS=$(systemctl is-active airlink-panel 2>/dev/null || echo "not installed")
     DAEMON_STATUS=$(systemctl is-active airlink-daemon 2>/dev/null || echo "not installed")
     NODE_VER=$(node -v 2>/dev/null || echo "not installed")
@@ -318,64 +428,69 @@ show_status() {
     clear
 }
 
-# recommend addons
+# Install addons
 install_addons() {
-
-while true; do
-        choice=$(dialog --title "Do you want to install a addon to the panel?" --menu "Choose action:" 20 60 13 \
-            1 "Install Both (https://github.com/g-flame-oss/airlink-addons/tree/modrinth-addon)" \
-            2 "Install Panel (https://github.com/g-flame-oss/airlink-addons/tree/parachute)" \
-            3 "install both" \
-            4 "no" \
+    while true; do
+        choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" 15 70 4 \
+            1 "Install Modrinth (https://github.com/g-flame-oss/airlink-addons)" \
+            2 "Install Parachute (https://github.com/g-flame-oss/airlink-addons)" \
+            3 "Install Both" \
+            4 "Skip" \
             0 "Exit" 3>&1 1>&2 2>&3) || break
         
         case $choice in
             1) install_modrinth;;
             2) install_parachute;;
-            3) install_both_addons;;
-            4) ;;
-            0) clear;;
+            3) install_modrinth; install_parachute;;
+            4) break;;
+            0) clear; break;;
         esac
     done
     clear
 }
 
 install_modrinth() {
-cd /var/www/panel/storage/addons/
-ok "cloning repo..."
-git clone --branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git modrinth-store
-cd /var/www/panel/storage/addons/modrinth-store
-ok "Installing dependencies this may take a while..."
-sudo npm install
-ok "Building addon.."
-sudo npm run build
-ok "Continuing..."
+    info "Installing Modrinth addon..."
+    cd /var/www/panel/storage/addons/
+    info "Cloning Modrinth repository..."
+    git clone --branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git modrinth-store &>/dev/null
+    ok "Repository cloned"
+    
+    cd modrinth-store
+    info "Installing dependencies..."
+    npm install &>/dev/null
+    ok "Dependencies installed"
+    
+    info "Building Modrinth addon..."
+    npm run build
+    ok "Modrinth addon installed successfully"
 }
 
 install_parachute() {
-cd /var/www/panel/storage/addons/
-ok "cloning repo..."
-git clone --branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git parachute
-cd /var/www/panel/storage/addons/parachute
-ok "Installing dependencies this may take a while..."
-sudo npm install
-ok "Building addon.."
-sudo npm run build
-ok "Continuing..."
+    info "Installing Parachute addon..."
+    cd /var/www/panel/storage/addons/
+    info "Cloning Parachute repository..."
+    git clone --branch parachute https://github.com/g-flame-oss/airlink-addons.git parachute &>/dev/null
+    ok "Repository cloned"
+    
+    cd parachute
+    info "Installing dependencies..."
+    npm install &>/dev/null
+    ok "Dependencies installed"
+    
+    info "Building Parachute addon..."
+    npm run build
+    ok "Parachute addon installed successfully"
 }
 
-install_both_addons() {
-install_modrinth
-install_parachute
-}
 # Main menu
 main_menu() {
     while true; do
-        choice=$(dialog --title "Airlink Installer v${VERSION}" --menu "Choose action:" 20 60 13 \
+        choice=$(dialog --title "Airlink Installer v${VERSION}" --menu "Choose action:" 20 60 11 \
             1 "Install Both" \
             2 "Install Panel" \
             3 "Install Daemon" \
-            4 "install Addons" \
+            4 "Install Addons" \
             5 "Setup Dependencies Only" \
             6 "Remove Panel" \
             7 "Remove Daemon" \
@@ -387,35 +502,21 @@ main_menu() {
         
         case $choice in
             1) install_all;;
-            2) install_panel;;
-            3) install_daemon;;
+            2) setup_node; setup_docker; install_panel;;
+            3) setup_node; setup_docker; install_daemon;;
             4) install_addons;;
             5) setup_node; setup_docker;;
-            6) 
-                dialog --yesno "Remove Panel?" 6 30 && remove_panel
-                ;;
-            7) 
-                dialog --yesno "Remove Daemon?" 6 30 && remove_daemon
-                ;;
-            8) 
-                dialog --yesno "Remove Dependencies?" 6 30 && remove_deps
-                ;;
-            9) 
-                dialog --yesno "Remove EVERYTHING?" 7 40 && {
+            6) dialog --yesno "Remove Panel?" 6 30 && remove_panel;;
+            7) dialog --yesno "Remove Daemon?" 6 30 && remove_daemon;;
+            8) dialog --yesno "Remove Dependencies?" 6 30 && remove_deps;;
+            9) dialog --yesno "Remove EVERYTHING?" 7 40 && {
                     remove_panel
                     remove_daemon
                     remove_deps
-                }
-                ;;
+                };;
             10) show_status;;
-            11) 
-                [[ -f "$LOG" ]] && dialog --textbox "$LOG" 20 80 || dialog --msgbox "No logs found" 6 30
-                ;;
-            0) 
-                clear
-                echo -e "${G}Thanks for using Airlink Installer!${N}"
-                exit 0
-                ;;
+            11) [[ -f "$LOG" ]] && dialog --textbox "$LOG" 20 80 || dialog --msgbox "No logs found" 6 30;;
+            0) clear; echo -e "${G}Thanks for using Airlink Installer!${N}"; exit 0;;
         esac
     done
     clear
@@ -425,6 +526,7 @@ main_menu() {
 trap 'rm -rf "$TEMP"' EXIT
 
 # Start
+info "Starting Airlink Installer v${VERSION}..."
 touch "$LOG"
 log "=== Airlink Installer v${VERSION} started ==="
 main_menu
