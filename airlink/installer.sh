@@ -52,13 +52,12 @@ run_with_loading() {
 detect_os() {
     info "Detecting operating system..."
     if [[ -f /etc/os-release ]]; then
-        # Source os-release but avoid VERSION conflict
-        source <(grep -v '^VERSION=' /etc/os-release)
+        # Read os-release without sourcing VERSION variable
+        OS=$(grep '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
         VER=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
     else
         err "Cannot detect OS"
     fi
-    OS=$ID
     
     case "$OS" in
         ubuntu|debian|linuxmint|pop) FAM="debian"; PKG="apt";;
@@ -69,7 +68,6 @@ detect_os() {
     esac
     ok "Detected: $OS ($FAM)"
 }
-
 # Package installation
 pkg_install() {
     info "Installing packages: $*"
@@ -486,24 +484,22 @@ install_addons() {
     
     if [ "$from_install" = true ]; then
         # Simplified menu when called from installation
-        while true; do
-            choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" 12 70 3 \
-                1 "Install Modrinth (https://github.com/g-flame-oss/airlink-addons)" \
-                2 "Install Parachute (https://github.com/g-flame-oss/airlink-addons)" \
-                3 "Install Both" \
-                4 "Skip" 3>&1 1>&2 2>&3)
-            
-            case $choice in
-                1) install_modrinth; main_menu;;
-                2) install_parachute; main_menu;;
-                3) install_modrinth; install_parachute;;
-                4) ;;
-            esac
-        done
+        choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" 12 70 4 \
+            1 "Install Modrinth (https://github.com/g-flame-oss/airlink-addons)" \
+            2 "Install Parachute (https://github.com/g-flame-oss/airlink-addons)" \
+            3 "Install Both" \
+            4 "Skip" 3>&1 1>&2 2>&3) || return
+        
+        case $choice in
+            1) install_modrinth;;
+            2) install_parachute;;
+            3) install_modrinth; install_parachute;;
+            4) ;;  # Skip - do nothing
+        esac
     else
         # Full menu when called from main menu
         while true; do
-            choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" 15 70 5 \
+            choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" 15 70 4 \
                 1 "Install Modrinth (https://github.com/g-flame-oss/airlink-addons)" \
                 2 "Install Parachute (https://github.com/g-flame-oss/airlink-addons)" \
                 3 "Install Both" \
@@ -513,7 +509,7 @@ install_addons() {
                 1) install_modrinth;;
                 2) install_parachute;;
                 3) install_modrinth; install_parachute;;
-                0) clear;;
+                0) clear; break;;
             esac
         done
     fi
