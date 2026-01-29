@@ -7,7 +7,7 @@ readonly VERSION="3.0.0"
 readonly LOG="/tmp/airlink.log"
 readonly NODE_VER="20"
 readonly TEMP="/tmp/airlink-tmp"
-
+readonly PRISMA_VER="6.19.1"
 # Colors
 R='\033[0;31m' G='\033[0;32m' Y='\033[1;33m' C='\033[0;36m' N='\033[0m'
 
@@ -57,9 +57,19 @@ for d in "${deps[@]}"; do command -v "$d" &>/dev/null || missing+=("$d"); done
 
 # Node.js setup
 setup_node() {
-    info "Installing Node.js $NODE_VER..."
+    if command -v node &>/dev/null; then
+        INSTALLED_VER=$(node -v | sed 's/v//' | cut -d. -f1)
+        if [ "$INSTALLED_VER" = "$NODE_VER" ]; then
+            ok "Node.js $NODE_VER already installed, skipping"
+            return
+        else
+            info "Node.js version mismatch (found $(node -v)), reinstalling $NODE_VER"
+        fi
+    else
+        info "Node.js not found, installing $NODE_VER"
+    fi
     case "$FAM" in
-        debian) 
+        debian)
             curl -fsSL "https://deb.nodesource.com/setup_${NODE_VER}.x" | bash - &>/dev/null
             pkg_install nodejs
             ;;
@@ -67,11 +77,16 @@ setup_node() {
             curl -fsSL "https://rpm.nodesource.com/setup_${NODE_VER}.x" | bash - &>/dev/null
             pkg_install nodejs
             ;;
-        arch) pkg_install nodejs npm;;
-        alpine) pkg_install nodejs npm;;
+        arch) pkg_install nodejs npm ;;
+        alpine) pkg_install nodejs npm ;;
     esac
-    command -v node &>/dev/null && ok "Node.js $(node -v) installed" || err "Node.js install failed"
-    npm install -g typescript &>/dev/null && ok "TypeScript installed"
+    if command -v node &>/dev/null; then
+        ok "Node.js $(node -v) installed"
+    else
+        err "Node.js install failed"
+    fi
+    npm list -g typescript &>/dev/null || \
+        npm install -g typescript &>/dev/null && ok "TypeScript installed"
 }
 
 # Docker setup
@@ -115,12 +130,26 @@ EOF
     # Install and build
     info "Installing dependencies..."
     npm install --omit=dev &>/dev/null || err "npm install failed"
-    info "Installing prisma 6.19.1..."
-    npm uninstall -g prisma
-    npm cache clean --force
-    npm install prisma@6.19.1 @prisma/client@6.19.1
+    
+    if command -v prisma &>/dev/null; then
+        INSTALLED_VER=$(prisma -v | grep "prisma" | head -n1 | awk '{print $2}')
+        if [ "$INSTALLED_VER" = "$PRISMA_VER" ]; then
+            ok "Prisma $PRISMA_VER already installed, skipping"
+        else
+            info "Prisma version mismatch (found $INSTALLED_VER), reinstalling $PRISMA_VER"
+            npm uninstall -g prisma &>/dev/null
+            npm uninstall prisma @prisma/client &>/dev/null
+            npm cache clean --force &>/dev/null
+            npm install prisma@$PRISMA_VER @prisma/client@$PRISMA_VER &>/dev/null || err "Prisma install failed"
+        fi
+    else
+        info "Prisma not found, installing $PRISMA_VER"
+        npm install prisma@$PRISMA_VER @prisma/client@$PRISMA_VER &>/dev/null || err "Prisma install failed"
+    fi
+
     info "Running migrations..."
-    y | npm run migrate:dev &>/dev/null || err "Migration failed"
+    CI=true npm run migrate:dev &>/dev/null || err "Migration failed"
+    
     info "Building Panel..."
     npm run build-ts &>/dev/null || err "Build failed"
     
