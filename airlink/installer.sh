@@ -48,13 +48,17 @@ run_with_loading() {
         err "$message failed"
     fi
 }
-
-
 # Detect OS
 detect_os() {
     info "Detecting operating system..."
-    [[ -f /etc/os-release ]] && . /etc/os-release || err "Cannot detect OS"
-    OS=$ID; VER=$VERSION_ID
+    if [[ -f /etc/os-release ]]; then
+        # Source os-release but avoid VERSION conflict
+        source <(grep -v '^VERSION=' /etc/os-release)
+        VER=$(grep '^VERSION_ID=' /etc/os-release | cut -d= -f2 | tr -d '"')
+    else
+        err "Cannot detect OS"
+    fi
+    OS=$ID
     
     case "$OS" in
         ubuntu|debian|linuxmint|pop) FAM="debian"; PKG="apt";;
@@ -153,7 +157,7 @@ setup_docker() {
             run_with_loading "Downloading and installing Docker" bash -c "curl -fsSL https://get.docker.com | sh"
             ;;
         arch) pkg_install docker;;
-        alpine: 
+        alpine) 
             pkg_install docker
             info "Adding Docker to boot..."
             rc-update add docker boot &>/dev/null
