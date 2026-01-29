@@ -41,13 +41,13 @@ run_with_loading() {
     info "$message"
     "$@" &>/dev/null &
     local pid=$!
-    show_loading $pid "$message"
+    show_loading $pid
     wait $pid
     local status=$?
     if [ $status -eq 0 ]; then
-        ok "$message completed"
+        ok "completed"
     else
-        err "$message failed"
+        err "failed"
     fi
 }
 
@@ -493,12 +493,14 @@ install_addons() {
             choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" 12 70 3 \
                 1 "Install Modrinth (https://github.com/g-flame-oss/airlink-addons)" \
                 2 "Install Parachute (https://github.com/g-flame-oss/airlink-addons)" \
-                3 "Skip" 3>&1 1>&2 2>&3) || break
+                3 "Install Both" \
+                4 "Skip" 3>&1 1>&2 2>&3)
             
             case $choice in
-                1) install_modrinth; break;;
-                2) install_parachute; break;;
-                3) break;;
+                1) install_modrinth; main_menu;;
+                2) install_parachute; main_menu;;
+                3) install_modrinth; install_parachute;;
+                4) ;;
             esac
         done
     else
@@ -508,15 +510,13 @@ install_addons() {
                 1 "Install Modrinth (https://github.com/g-flame-oss/airlink-addons)" \
                 2 "Install Parachute (https://github.com/g-flame-oss/airlink-addons)" \
                 3 "Install Both" \
-                4 "Skip" \
                 0 "Exit" 3>&1 1>&2 2>&3) || break
             
             case $choice in
                 1) install_modrinth;;
                 2) install_parachute;;
                 3) install_modrinth; install_parachute;;
-                4) break;;
-                0) clear; break;;
+                0) clear;;
             esac
         done
     fi
