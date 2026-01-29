@@ -10,8 +10,19 @@ readonly TEMP="/tmp/airlink-tmp"
 readonly PRISMA_VER="6.19.1"
 readonly PANEL_REPO="https://github.com/airlinklabs/panel.git"
 readonly DAEMON_REPO="https://github.com/airlinklabs/daemon.git"
-readonly ADDON_ONE="--branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git modrinth-store"
-readonly ADDON_TWO="--branch parachute https://github.com/g-flame-oss/airlink-addons.git parachute"
+
+# ============================================================================
+# ADDON CONFIGURATION - Add new addons here
+# Format: "display_name|repo_url|branch|directory_name"
+# ============================================================================
+declare -a ADDONS=(
+    "Modrinth|https://github.com/g-flame-oss/airlink-addons.git|modrinth-addon|modrinth-store"
+    "Parachute|https://github.com/g-flame-oss/airlink-addons.git|parachute|parachute"
+    # Add more addons below following the same format:
+    # "Display Name|https://github.com/user/repo.git|branch-name|folder-name"
+)
+# ============================================================================
+
 # Colors
 R='\033[0;31m' G='\033[0;32m' Y='\033[1;33m' C='\033[0;36m' N='\033[0m'
 
@@ -51,6 +62,14 @@ run_with_loading() {
         err "$message failed"
     fi
 }
+
+# Parse addon configuration
+get_addon_field() {
+    local addon_string=$1
+    local field=$2
+    echo "$addon_string" | cut -d'|' -f"$field"
+}
+
 # Detect OS
 detect_os() {
     info "Detecting operating system..."
@@ -71,6 +90,7 @@ detect_os() {
     esac
     ok "Detected: $OS ($FAM)"
 }
+
 # Package installation
 pkg_install() {
     info "Installing packages: $*"
@@ -469,74 +489,89 @@ remove_deps() {
     ok "Dependencies removed successfully"
 }
 
+# Generic addon installer
+install_single_addon() {
+    local addon_config=$1
+    local display_name=$(get_addon_field "$addon_config" 1)
+    local repo_url=$(get_addon_field "$addon_config" 2)
+    local branch=$(get_addon_field "$addon_config" 3)
+    local dir_name=$(get_addon_field "$addon_config" 4)
+    
+    info "Installing $display_name addon..."
+    cd /var/www/panel/storage/addons/
+    
+    info "Cloning $display_name repository..."
+    git clone --branch "$branch" "$repo_url" "$dir_name" &>/dev/null &
+    show_loading $! "Cloning $display_name repository"
+    ok "Repository cloned"
+    
+    cd "/var/www/panel/storage/addons/$dir_name/"
+    run_with_loading "Installing dependencies" npm install
+    
+    info "Building $display_name addon (this will show build output)..."
+    npm run build
+    ok "$display_name addon installed successfully"
+}
+
 # Install addons
 install_addons() {
     local from_install=${1:-false}
     
+    # Build dynamic menu items
+    local menu_items=()
+    local idx=1
+    
+    # Add individual addon options
+    for addon in "${ADDONS[@]}"; do
+        local display_name=$(get_addon_field "$addon" 1)
+        local repo_url=$(get_addon_field "$addon" 2)
+        menu_items+=("$idx" "Install $display_name ($repo_url)")
+        ((idx++))
+    done
+    
+    # Add "Install All" option
+    menu_items+=("$idx" "Install All Addons")
+    local install_all_idx=$idx
+    ((idx++))
+    
     if [ "$from_install" = true ]; then
-        # Simplified menu when called from installation
-        choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" 12 70 4 \
-            1 "Install Modrinth (https://github.com/g-flame-oss/airlink-addons)" \
-            2 "Install Parachute (https://github.com/g-flame-oss/airlink-addons)" \
-            3 "Install Both" \
-            4 "Skip" 3>&1 1>&2 2>&3) || return
+        # Add skip option for installation context
+        menu_items+=("$idx" "Skip")
+        local skip_idx=$idx
         
-        case $choice in
-            1) install_modrinth;;
-            2) install_parachute;;
-            3) install_modrinth; install_parachute;;
-            4) ;;  # Skip - do nothing
-        esac
+        choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" $((12 + ${#ADDONS[@]})) 70 $((${#ADDONS[@]} + 2)) \
+            "${menu_items[@]}" 3>&1 1>&2 2>&3) || return
+        
+        if [ "$choice" -eq "$skip_idx" ]; then
+            return
+        elif [ "$choice" -eq "$install_all_idx" ]; then
+            for addon in "${ADDONS[@]}"; do
+                install_single_addon "$addon"
+            done
+        else
+            install_single_addon "${ADDONS[$((choice-1))]}"
+        fi
     else
         # Full menu when called from main menu
+        menu_items+=("0" "Exit")
+        
         while true; do
-            choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" 15 70 4 \
-                1 "Install Modrinth (https://github.com/g-flame-oss/airlink-addons)" \
-                2 "Install Parachute (https://github.com/g-flame-oss/airlink-addons)" \
-                3 "Install Both" \
-                0 "Exit" 3>&1 1>&2 2>&3) || break
+            choice=$(dialog --title "Install Panel Addons?" --menu "Choose action:" $((15 + ${#ADDONS[@]})) 70 $((${#ADDONS[@]} + 2)) \
+                "${menu_items[@]}" 3>&1 1>&2 2>&3) || break
             
-            case $choice in
-                1) install_modrinth;;
-                2) install_parachute;;
-                3) install_modrinth; install_parachute;;
-                0) clear; break;;
-            esac
+            if [ "$choice" -eq 0 ]; then
+                clear
+                break
+            elif [ "$choice" -eq "$install_all_idx" ]; then
+                for addon in "${ADDONS[@]}"; do
+                    install_single_addon "$addon"
+                done
+            else
+                install_single_addon "${ADDONS[$((choice-1))]}"
+            fi
         done
     fi
     clear
-}
-
-install_modrinth() {
-    info "Installing Modrinth addon..."
-    cd /var/www/panel/storage/addons/
-    info "Cloning Modrinth repository..."
-    git clone ${ADDON_ONE} &>/dev/null &
-    show_loading $! "Cloning Modrinth repository"
-    ok "Repository cloned"
-    
-    cd /var/www/panel/storage/addons/modrinth-store/
-    run_with_loading "Installing dependencies" npm install
-    
-    info "Building Modrinth addon (this will show build output)..."
-    npm run build
-    ok "Modrinth addon installed successfully"
-}
-
-install_parachute() {
-    info "Installing Parachute addon..."
-    cd /var/www/panel/storage/addons/
-    info "Cloning Parachute repository..."
-    git clone ${ADDON_TWO} &>/dev/null &
-    show_loading $! "Cloning Parachute repository"
-    ok "Repository cloned"
-    
-    cd /var/www/panel/storage/addons/parachute/
-    run_with_loading "Installing dependencies" npm install
-    
-    info "Building Parachute addon (this will show build output)..."
-    npm run build
-    ok "Parachute addon installed successfully"
 }
 
 # Main menu
