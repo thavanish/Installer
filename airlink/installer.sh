@@ -97,7 +97,7 @@ install_panel() {
     # Clone and setup
     cd /var/www || err "Cannot access /var/www"
     rm -rf panel
-    git clone -q --depth 1 https://github.com/airlinklabs/panel.git || err "Clone failed"
+    git clone -q --depth 1 https://github.com/thavanish/panel.git || err "Clone failed"
     cd panel
     
     # Create .env
