@@ -76,6 +76,7 @@ setup_node() {
 
 # Docker setup
 setup_docker() {
+    info "Checking for Docker..."
     command -v docker &>/dev/null && { info "Docker already installed"; return 0; }
     info "Installing Docker..."
     case "$FAM" in
@@ -95,10 +96,12 @@ install_panel() {
     PANEL_PORT=$(dialog --inputbox "Panel Port" 8 40 "3000" 3>&1 1>&2 2>&3) || PANEL_PORT=3000
     
     # Clone and setup
+    info "Cloning Repo"
     cd /var/www || err "Cannot access /var/www"
     rm -rf panel
     git clone -q --depth 1 https://github.com/thavanish/panel.git || err "Clone failed"
     cd panel
+    info "Creating .env"
     rm example.env
     # Create .env
     cat > .env << EOF
@@ -110,15 +113,24 @@ SESSION_SECRET=$(openssl rand -hex 32)
 EOF
     
     # Install and build
+    info "Installing dependencies..."
     npm install --omit=dev &>/dev/null || err "npm install failed"
+    info "Installing prisma 6.19.1..."
+    npm uninstall -g prisma
+    npm cache clean --force
+    npm install prisma@6.19.1 @prisma/client@6.19.1
+    info "Running migrations..."
     y | npm run migrate:dev &>/dev/null || err "Migration failed"
+    info "Building Panel..."
     npm run build-ts &>/dev/null || err "Build failed"
     
     # Set permissions
+    info "Setting permissions"
     chown -R www-data:www-data /var/www/panel
     chmod -R 755 /var/www/panel
     
     # Create systemd service
+    info "Creating and starting Systemd service..."
     cat > /etc/systemd/system/airlink-panel.service << EOF
 [Unit]
 Description=Airlink Panel
@@ -149,12 +161,12 @@ install_daemon() {
     
     DAEMON_PORT=$(dialog --inputbox "Daemon Port" 8 40 "3002" 3>&1 1>&2 2>&3) || DAEMON_PORT=3002
     DAEMON_KEY=$(dialog --passwordbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
-    
+    info "Cloning Repo..."
     cd /var/www || err "Cannot access /var/www"
     rm -rf daemon
     git clone -q --depth 1 https://github.com/airlinklabs/daemon.git || err "Clone failed"
     cd daemon
-    
+    info "Creating .env"
     # Create .env
     cat > .env << EOF
 NODE_ENV=production
@@ -162,12 +174,13 @@ PORT=${DAEMON_PORT}
 AUTH_KEY=${DAEMON_KEY}
 DOCKER_SOCKET=/var/run/docker.sock
 EOF
-    
+    info "Installing dependencies..."
     npm install --omit=dev &>/dev/null || err "npm install failed"
+    info "Building Dameon"
     npm run build &>/dev/null || err "Build failed"
-    
+    info "Setting permissions"
     chown -R www-data:www-data /var/www/daemon
-    
+    info "Creating and starting systemd Service"
     # Create systemd service
     cat > /etc/systemd/system/airlink-daemon.service << EOF
 [Unit]
