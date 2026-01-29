@@ -191,24 +191,7 @@ EOF
     systemctl daemon-reload
     systemctl enable --now airlink-panel &>/dev/null
 
-    # recommend addons
-while true; do
-        choice=$(dialog --title "Do you want to install a addon to the panel?" --menu "Choose action:" 20 60 13 \
-            1 "Install Both (https://github.com/g-flame-oss/airlink-addons/tree/modrinth-addon)" \
-            2 "Install Panel (https://github.com/g-flame-oss/airlink-addons/tree/parachute)" \
-            3 "install both" \
-            4 "no" \
-            0 "Exit" 3>&1 1>&2 2>&3) || break
-        
-        case $choice in
-            1) install_modrinth;;
-            2) install_parachute;;
-            3) install_both_addons;;
-            4) ;;
-            0) clear;;
-        esac
-    done
-    clear
+    install_addons
     ok "Panel installed on port ${PANEL_PORT}"
     
 }
@@ -335,6 +318,28 @@ show_status() {
     clear
 }
 
+# recommend addons
+install_addons() {
+
+while true; do
+        choice=$(dialog --title "Do you want to install a addon to the panel?" --menu "Choose action:" 20 60 13 \
+            1 "Install Both (https://github.com/g-flame-oss/airlink-addons/tree/modrinth-addon)" \
+            2 "Install Panel (https://github.com/g-flame-oss/airlink-addons/tree/parachute)" \
+            3 "install both" \
+            4 "no" \
+            0 "Exit" 3>&1 1>&2 2>&3) || break
+        
+        case $choice in
+            1) install_modrinth;;
+            2) install_parachute;;
+            3) install_both_addons;;
+            4) ;;
+            0) clear;;
+        esac
+    done
+    clear
+}
+
 install_modrinth() {
 cd /var/www/panel/storage/addons/
 ok "cloning repo..."
@@ -370,38 +375,40 @@ main_menu() {
             1 "Install Both" \
             2 "Install Panel" \
             3 "Install Daemon" \
-            4 "Setup Dependencies Only" \
-            5 "Remove Panel" \
-            6 "Remove Daemon" \
-            7 "Remove Dependencies" \
-            8 "Remove Everything" \
-            9 "Show Status" \
-            10 "View Logs" \
+            4 "install Addons" \
+            5 "Setup Dependencies Only" \
+            6 "Remove Panel" \
+            7 "Remove Daemon" \
+            8 "Remove Dependencies" \
+            9 "Remove Everything" \
+            10 "Show Status" \
+            11 "View Logs" \
             0 "Exit" 3>&1 1>&2 2>&3) || break
         
         case $choice in
             1) install_all;;
             2) install_panel;;
             3) install_daemon;;
-            4) setup_node; setup_docker;;
-            5) 
+            4) install_addons;;
+            5) setup_node; setup_docker;;
+            6) 
                 dialog --yesno "Remove Panel?" 6 30 && remove_panel
                 ;;
-            6) 
+            7) 
                 dialog --yesno "Remove Daemon?" 6 30 && remove_daemon
                 ;;
-            7) 
+            8) 
                 dialog --yesno "Remove Dependencies?" 6 30 && remove_deps
                 ;;
-            8) 
+            9) 
                 dialog --yesno "Remove EVERYTHING?" 7 40 && {
                     remove_panel
                     remove_daemon
                     remove_deps
                 }
                 ;;
-            9) show_status;;
-            10) 
+            10) show_status;;
+            11) 
                 [[ -f "$LOG" ]] && dialog --textbox "$LOG" 20 80 || dialog --msgbox "No logs found" 6 30
                 ;;
             0) 
