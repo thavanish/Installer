@@ -206,6 +206,7 @@ DOCKER_SOCKET=/var/run/docker.sock
 EOF
     info "Installing dependencies..."
     npm install --omit=dev &>/dev/null || err "npm install failed"
+    npm install express
     info "Building Dameon"
     npm run build || err "Build failed"
     info "Setting permissions"
