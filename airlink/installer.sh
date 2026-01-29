@@ -515,7 +515,7 @@ install_modrinth() {
     show_loading $! "Cloning Modrinth repository"
     ok "Repository cloned"
     
-    cd var/www/panel/storage/addons/modrinth-store
+    cd /var/www/panel/storage/addons/modrinth-store
     run_with_loading "Installing dependencies" npm install
     
     info "Building Modrinth addon (this will show build output)..."
@@ -531,7 +531,7 @@ install_parachute() {
     show_loading $! "Cloning Parachute repository"
     ok "Repository cloned"
     
-    cd var/www/panel/storage/addons/parachute
+    cd /var/www/panel/storage/addons/parachute
     run_with_loading "Installing dependencies" npm install
     
     info "Building Parachute addon (this will show build output)..."
