@@ -113,7 +113,6 @@ install_panel() {
     # Clone and setup
     info "Cloning Repo"
     cd /var/www || err "Cannot access /var/www"
-    rm -rf panel
     git clone -q --depth 1 https://github.com/thavanish/panel.git || err "Clone failed"
     cd panel
 
@@ -194,8 +193,7 @@ install_daemon() {
     DAEMON_KEY=$(dialog --inputbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
     clear
     info "Cloning Repo..."
-    cd /var/www || err "Cannot access /var/www"
-    rm -rf daemon
+    cd /etc || err "Cannot access /etc"
     git clone -q --depth 1 https://github.com/airlinklabs/daemon.git || err "Clone failed"
     cd daemon
     info "Creating .env"
@@ -211,7 +209,7 @@ EOF
     info "Building Dameon"
     npm run build || err "Build failed"
     info "Setting permissions"
-    chown -R www-data:www-data /var/www/daemon
+    chown -R www-data:www-data /etc/daemon
     info "Creating and starting systemd Service"
     # Create systemd service
     cat > /etc/systemd/system/airlink-daemon.service << EOF
@@ -222,7 +220,7 @@ After=network.target docker.service
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/var/www/daemon
+WorkingDirectory=/etc/daemon
 ExecStart=/usr/bin/node dist/index.js
 Restart=always
 Environment=NODE_ENV=production
