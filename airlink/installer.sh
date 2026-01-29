@@ -469,19 +469,6 @@ remove_deps() {
     ok "Dependencies removed successfully"
 }
 
-# Status check
-show_status() {
-    info "Checking system status..."
-    PANEL_STATUS=$(systemctl is-active airlink-panel 2>/dev/null || echo "not installed")
-    DAEMON_STATUS=$(systemctl is-active airlink-daemon 2>/dev/null || echo "not installed")
-    NODE_VER=$(node -v 2>/dev/null || echo "not installed")
-    DOCKER_VER=$(docker --version 2>/dev/null | cut -d' ' -f3 | sed 's/,//' || echo "not installed")
-    
-    dialog --msgbox "=== Airlink Status ===\n\nPanel: ${PANEL_STATUS}\nDaemon: ${DAEMON_STATUS}\n\nNode.js: ${NODE_VER}\nDocker: ${DOCKER_VER}\n\nOS: ${OS} ${VER}\nPackage Manager: ${PKG}" 16 50
-    clear
-}
-
-
 # Install addons
 install_addons() {
     local from_install=${1:-false}
@@ -565,8 +552,7 @@ main_menu() {
             7 "Remove Daemon" \
             8 "Remove Dependencies" \
             9 "Remove Everything" \
-            10 "Show Status" \
-            11 "View Logs" \
+            10 "View Logs" \
             0 "Exit" 3>&1 1>&2 2>&3) || break
         
         case $choice in
@@ -583,8 +569,7 @@ main_menu() {
                     remove_daemon
                     remove_deps
                 };;
-            10) show_status;;
-            11) [[ -f "$LOG" ]] && dialog --textbox "$LOG" 20 80 || dialog --msgbox "No logs found" 6 30;;
+            10) [[ -f "$LOG" ]] && dialog --textbox "$LOG" 20 80 || dialog --msgbox "No logs found" 6 30;;
             0) clear; echo -e "${G}Thanks for using Airlink Installer!${N}"; exit 0;;
         esac
     done
