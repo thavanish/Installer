@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Configuration
-readonly VERSION="3.0.0"
+readonly VERSION="2.5.87-beta"
 readonly LOG="/tmp/airlink.log"
 readonly NODE_VER="20"
 readonly TEMP="/tmp/airlink-tmp"
@@ -45,7 +45,7 @@ pkg_install() {
 
 # Check root
 [[ $EUID -eq 0 ]] || { dialog --msgbox "Run as root/sudo" 6 30 2>/dev/null || echo "Run as root"; exit 1; }
-
+clear
 # Detect system
 detect_os
 
@@ -235,8 +235,6 @@ EOF
     systemctl enable --now airlink-daemon &>/dev/null
     
     ok "Daemon installed on port ${DAEMON_PORT}"
-    info "Daemon Key: ${DAEMON_KEY}"
-    dialog --msgbox "Daemon Key (save this):\n\n${DAEMON_KEY}" 10 60
 }
 
 # Install both
@@ -247,6 +245,7 @@ install_all() {
     install_daemon
     
     dialog --msgbox "Installation Complete!\n\nPanel: http://$(hostname -I | awk '{print $1}'):3000\nDaemon: Running on port 3002\n\nCheck logs: journalctl -u airlink-panel -f" 14 60
+    clear
 }
 
 # Uninstall functions
@@ -289,6 +288,7 @@ show_status() {
     DOCKER_VER=$(docker --version 2>/dev/null | cut -d' ' -f3 | sed 's/,//' || echo "not installed")
     
     dialog --msgbox "=== Airlink Status ===\n\nPanel: ${PANEL_STATUS}\nDaemon: ${DAEMON_STATUS}\n\nNode.js: ${NODE_VER}\nDocker: ${DOCKER_VER}\n\nOS: ${OS} ${VER}\nPackage Manager: ${PKG}" 16 50
+    clear
 }
 
 # Main menu
@@ -339,6 +339,7 @@ main_menu() {
                 ;;
         esac
     done
+    clear
 }
 
 # Cleanup on exit
