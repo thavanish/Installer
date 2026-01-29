@@ -109,7 +109,7 @@ install_panel() {
     
      # Get configuration
     PANEL_PORT=$(dialog --inputbox "Panel Port" 8 40 "3000" 3>&1 1>&2 2>&3) || PANEL_PORT=3000
-    
+    clear
     # Clone and setup
     info "Cloning Repo"
     cd /var/www || err "Cannot access /var/www"
@@ -191,7 +191,8 @@ install_daemon() {
     info "Installing Daemon..."
     
     DAEMON_PORT=$(dialog --inputbox "Daemon Port" 8 40 "3002" 3>&1 1>&2 2>&3) || DAEMON_PORT=3002
-    DAEMON_KEY=$(dialog --passwordbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
+    DAEMON_KEY=$(dialog --inputbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
+    clear
     info "Cloning Repo..."
     cd /var/www || err "Cannot access /var/www"
     rm -rf daemon
@@ -208,7 +209,7 @@ EOF
     info "Installing dependencies..."
     npm install --omit=dev &>/dev/null || err "npm install failed"
     info "Building Dameon"
-    npm run build &>/dev/null || err "Build failed"
+    npm run build || err "Build failed"
     info "Setting permissions"
     chown -R www-data:www-data /var/www/daemon
     info "Creating and starting systemd Service"
