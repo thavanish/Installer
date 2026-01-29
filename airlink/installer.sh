@@ -129,7 +129,7 @@ install_panel() {
     cat > .env << EOF
 NODE_ENV=production
 PORT=${PANEL_PORT}
-DATABASE_URL="file:./dev.db"" 
+DATABASE_URL="file:./dev.db" 
 JWT_SECRET=$(openssl rand -hex 32)
 SESSION_SECRET=$(openssl rand -hex 32)
 EOF
