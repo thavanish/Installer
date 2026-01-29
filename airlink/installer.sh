@@ -11,7 +11,7 @@ readonly PRISMA_VER="6.19.1"
 readonly PANEL_REPO="https://github.com/airlinklabs/panel.git"
 readonly DAEMON_REPO="https://github.com/airlinklabs/daemon.git"
 readonly ADDON_ONE="--branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git modrinth-store"
-readonly ADDON_TWO="--branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git modrinth-store"
+readonly ADDON_TWO="--branch parachute https://github.com/g-flame-oss/airlink-addons.git parachute"
 # Colors
 R='\033[0;31m' G='\033[0;32m' Y='\033[1;33m' C='\033[0;36m' N='\033[0m'
 
