@@ -113,7 +113,7 @@ install_panel() {
     clear
     # Clone and setup
     info "Cloning Repo"
-    mkdir /var/www
+    mkdir -p /var/www
     cd /var/www || err "Cannot access /var/www"
     info "Deleting your old panel folder if it exists last warning.. (wait 5 secs)"
     sleep 5
