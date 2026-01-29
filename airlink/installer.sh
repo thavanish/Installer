@@ -19,6 +19,38 @@ ok() { echo -e "${G}[OK]${N} $*"; log "OK: $*"; }
 warn() { echo -e "${Y}[WARN]${N} $*"; log "WARN: $*"; }
 err() { echo -e "${R}[ERROR]${N} $*"; log "ERROR: $*"; exit 1; }
 
+# Loading spinner
+show_loading() {
+    local pid=$1
+    local message=$2
+    local spin='-\|/'
+    local i=0
+    echo -n "$message "
+    while kill -0 $pid 2>/dev/null; do
+        i=$(( (i+1) %4 ))
+        printf "\r$message ${spin:$i:1}"
+        sleep .1
+    done
+    printf "\r$message Done!\n"
+}
+
+# Run command with loading indicator
+run_with_loading() {
+    local message=$1
+    shift
+    info "$message"
+    "$@" &>/dev/null &
+    local pid=$!
+    show_loading $pid "$message"
+    wait $pid
+    local status=$?
+    if [ $status -eq 0 ]; then
+        ok "$message completed"
+    else
+        err "$message failed"
+    fi
+}
+
 # Detect OS
 detect_os() {
     info "Detecting operating system..."
@@ -84,12 +116,14 @@ setup_node() {
     case "$FAM" in
         debian)
             info "Adding NodeSource repository..."
-            curl -fsSL "https://deb.nodesource.com/setup_${NODE_VER}.x" | bash - &>/dev/null
+            curl -fsSL "https://deb.nodesource.com/setup_${NODE_VER}.x" | bash - &>/dev/null &
+            show_loading $! "Adding NodeSource repository"
             pkg_install nodejs
             ;;
         redhat)
             info "Adding NodeSource repository..."
-            curl -fsSL "https://rpm.nodesource.com/setup_${NODE_VER}.x" | bash - &>/dev/null
+            curl -fsSL "https://rpm.nodesource.com/setup_${NODE_VER}.x" | bash - &>/dev/null &
+            show_loading $! "Adding NodeSource repository"
             pkg_install nodejs
             ;;
         arch) pkg_install nodejs npm ;;
@@ -106,9 +140,7 @@ setup_node() {
     if npm list -g typescript &>/dev/null; then
         ok "TypeScript already installed"
     else
-        info "Installing TypeScript globally..."
-        npm install -g typescript &>/dev/null
-        ok "TypeScript installed"
+        run_with_loading "Installing TypeScript globally" npm install -g typescript
     fi
 }
 
@@ -124,7 +156,8 @@ setup_docker() {
     case "$FAM" in
         debian|redhat) 
             info "Downloading Docker installation script..."
-            curl -fsSL https://get.docker.com | sh &>/dev/null
+            curl -fsSL https://get.docker.com | sh &>/dev/null &
+            show_loading $! "Installing Docker"
             ;;
         arch) pkg_install docker;;
         alpine) 
@@ -144,14 +177,35 @@ setup_docker() {
     fi
 }
 
-# Panel installation
-install_panel() {
-    info "Starting Panel installation..."
+# Collect all configuration upfront
+collect_all_config() {
+    info "Collecting configuration for all components..."
     
-    # Get configuration
+    # Panel configuration
     PANEL_NAME=$(dialog --inputbox "Panel name" 8 40 "Airlink" 3>&1 1>&2 2>&3) || PANEL_NAME="Airlink"
     PANEL_PORT=$(dialog --inputbox "Panel Port" 8 40 "3000" 3>&1 1>&2 2>&3) || PANEL_PORT=3000
+    
+    # Daemon configuration
+    PANEL_ADDRESS=$(dialog --inputbox "Panel ip/hostname" 8 40 "127.0.0.1" 3>&1 1>&2 2>&3) || PANEL_ADDRESS="127.0.0.1"
+    DAEMON_PORT=$(dialog --inputbox "Daemon Port" 8 40 "3002" 3>&1 1>&2 2>&3) || DAEMON_PORT=3002
+    DAEMON_KEY=$(dialog --inputbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
+    
     clear
+    ok "Configuration collected"
+}
+
+# Panel installation
+install_panel() {
+    local skip_config=${1:-false}
+    
+    info "Starting Panel installation..."
+    
+    # Get configuration if not already collected
+    if [ "$skip_config" = false ]; then
+        PANEL_NAME=$(dialog --inputbox "Panel name" 8 40 "Airlink" 3>&1 1>&2 2>&3) || PANEL_NAME="Airlink"
+        PANEL_PORT=$(dialog --inputbox "Panel Port" 8 40 "3000" 3>&1 1>&2 2>&3) || PANEL_PORT=3000
+        clear
+    fi
     
     # Clone and setup
     info "Preparing directories..."
@@ -167,7 +221,8 @@ install_panel() {
     
     rm -rf panel
     info "Cloning Panel repository..."
-    git clone https://github.com/airlinklabs/panel.git &>/dev/null || err "Clone failed"
+    git clone https://github.com/airlinklabs/panel.git &>/dev/null &
+    show_loading $! "Cloning Panel repository"
     ok "Repository cloned"
     
     cd panel
@@ -191,9 +246,7 @@ EOF
     ok ".env file created"
     
     # Install dependencies
-    info "Installing npm dependencies (this may take a while)..."
-    npm install --omit=dev &>/dev/null || err "npm install failed"
-    ok "Dependencies installed"
+    run_with_loading "Installing npm dependencies (this may take a while)" npm install --omit=dev
     
     # Install Prisma
     info "Checking Prisma installation..."
@@ -207,27 +260,19 @@ EOF
             npm uninstall -g prisma &>/dev/null
             npm uninstall prisma @prisma/client &>/dev/null
             npm cache clean --force &>/dev/null
-            info "Installing Prisma $PRISMA_VER..."
-            npm install prisma@$PRISMA_VER @prisma/client@$PRISMA_VER &>/dev/null || err "Prisma install failed"
-            ok "Prisma $PRISMA_VER installed"
+            run_with_loading "Installing Prisma $PRISMA_VER" npm install prisma@$PRISMA_VER @prisma/client@$PRISMA_VER
         fi
     else
-        info "Prisma not found, installing $PRISMA_VER..."
-        npm install prisma@$PRISMA_VER @prisma/client@$PRISMA_VER &>/dev/null || err "Prisma install failed"
-        ok "Prisma $PRISMA_VER installed"
+        run_with_loading "Installing Prisma $PRISMA_VER" npm install prisma@$PRISMA_VER @prisma/client@$PRISMA_VER
     fi
 
-    info "Running database migrations..."
-    CI=true npm run migrate:dev &>/dev/null || err "Migration failed"
-    ok "Database migrations completed"
+    run_with_loading "Running database migrations" bash -c "CI=true npm run migrate:dev"
     
-    info "Building Panel  ..."
+    info "Building Panel (this will show build output)..."
     npm run build || err "Build failed"
     ok "Panel build completed"
     
-    info "Seeding database with images..."
-    npm run seed &>/dev/null || err "Seeding failed"
-    ok "Database seeded"
+    run_with_loading "Seeding database with images" npm run seed
     
     # Create systemd service
     info "Creating systemd service..."
@@ -253,18 +298,25 @@ EOF
     systemctl enable --now airlink-panel &>/dev/null
     ok "Panel service started"
 
-    install_addons
+    if [ "$skip_config" = false ]; then
+        install_addons
+    fi
     ok "Panel installation completed on port ${PANEL_PORT}"
 }
 
 # Daemon installation
 install_daemon() {
+    local skip_config=${1:-false}
+    
     info "Starting Daemon installation..."
     
-    PANEL_ADDRESS=$(dialog --inputbox "Panel ip/hostname" 8 40 "127.0.0.1" 3>&1 1>&2 2>&3) || PANEL_ADDRESS="127.0.0.1"
-    DAEMON_PORT=$(dialog --inputbox "Daemon Port" 8 40 "3002" 3>&1 1>&2 2>&3) || DAEMON_PORT=3002
-    DAEMON_KEY=$(dialog --inputbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
-    clear
+    # Get configuration if not already collected
+    if [ "$skip_config" = false ]; then
+        PANEL_ADDRESS=$(dialog --inputbox "Panel ip/hostname" 8 40 "127.0.0.1" 3>&1 1>&2 2>&3) || PANEL_ADDRESS="127.0.0.1"
+        DAEMON_PORT=$(dialog --inputbox "Daemon Port" 8 40 "3002" 3>&1 1>&2 2>&3) || DAEMON_PORT=3002
+        DAEMON_KEY=$(dialog --inputbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
+        clear
+    fi
     
     info "Preparing directories..."
     cd /etc || err "Cannot access /etc"
@@ -278,7 +330,8 @@ install_daemon() {
     
     rm -rf daemon
     info "Cloning Daemon repository..."
-    git clone -q --depth 1 https://github.com/airlinklabs/daemon.git || err "Clone failed"
+    git clone -q --depth 1 https://github.com/airlinklabs/daemon.git &>/dev/null &
+    show_loading $! "Cloning Daemon repository"
     ok "Repository cloned"
     
     cd daemon
@@ -296,26 +349,17 @@ STATS_INTERVAL=10000
 EOF
     ok ".env file created"
     
-    info "Installing npm dependencies (this may take a while)..."
-    npm install --omit=dev &>/dev/null || err "npm install failed"
-    ok "Dependencies installed"
+    run_with_loading "Installing npm dependencies (this may take a while)" npm install --omit=dev
+    run_with_loading "Installing express" npm install express
     
-    info "Installing express..."
-    npm install express &>/dev/null
-    ok "Express installed"
-    
-    info "Building Daemon..."
+    info "Building Daemon (this will show build output)..."
     npm run build || err "Build failed"
     ok "Daemon build completed"
     
     info "Building libs..."
     cd libs
-    npm install &>/dev/null
-    ok "Libs dependencies installed"
-    
-    info "Rebuilding native modules..."
-    npm rebuild &>/dev/null
-    ok "Native modules rebuilt"
+    run_with_loading "Installing libs dependencies" npm install
+    run_with_loading "Rebuilding native modules" npm rebuild
     cd ..
     
     info "Setting permissions..."
@@ -352,10 +396,20 @@ EOF
 # Install both
 install_all() {
     info "Starting full installation (Node.js, Docker, Panel, Daemon)..."
+    
+    # Collect all configuration upfront
+    collect_all_config
+    
+    # Setup dependencies
     setup_node
     setup_docker
-    install_panel
-    install_daemon
+    
+    # Install components with skip_config flag
+    install_panel true
+    install_daemon true
+    
+    # Ask about addons at the end
+    install_addons
     
     dialog --msgbox "Installation Complete!\n\nPanel: http://$(hostname -I | awk '{print $1}'):3000\nDaemon: Running on port 3002\n\nCheck logs: journalctl -u airlink-panel -f" 14 60
     clear
@@ -453,15 +507,14 @@ install_modrinth() {
     info "Installing Modrinth addon..."
     cd /var/www/panel/storage/addons/
     info "Cloning Modrinth repository..."
-    git clone --branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git modrinth-store &>/dev/null
+    git clone --branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git modrinth-store &>/dev/null &
+    show_loading $! "Cloning Modrinth repository"
     ok "Repository cloned"
     
     cd modrinth-store
-    info "Installing dependencies..."
-    npm install &>/dev/null
-    ok "Dependencies installed"
+    run_with_loading "Installing dependencies" npm install
     
-    info "Building Modrinth addon..."
+    info "Building Modrinth addon (this will show build output)..."
     npm run build
     ok "Modrinth addon installed successfully"
 }
@@ -470,15 +523,14 @@ install_parachute() {
     info "Installing Parachute addon..."
     cd /var/www/panel/storage/addons/
     info "Cloning Parachute repository..."
-    git clone --branch parachute https://github.com/g-flame-oss/airlink-addons.git parachute &>/dev/null
+    git clone --branch parachute https://github.com/g-flame-oss/airlink-addons.git parachute &>/dev/null &
+    show_loading $! "Cloning Parachute repository"
     ok "Repository cloned"
     
     cd parachute
-    info "Installing dependencies..."
-    npm install &>/dev/null
-    ok "Dependencies installed"
+    run_with_loading "Installing dependencies" npm install
     
-    info "Building Parachute addon..."
+    info "Building Parachute addon (this will show build output)..."
     npm run build
     ok "Parachute addon installed successfully"
 }
@@ -502,8 +554,8 @@ main_menu() {
         
         case $choice in
             1) install_all;;
-            2) setup_node; setup_docker; install_panel;;
-            3) setup_node; setup_docker; install_daemon;;
+            2) setup_node; setup_docker; install_panel false;;
+            3) setup_node; setup_docker; install_daemon false;;
             4) install_addons;;
             5) setup_node; setup_docker;;
             6) dialog --yesno "Remove Panel?" 6 30 && remove_panel;;
