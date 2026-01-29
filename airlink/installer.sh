@@ -108,6 +108,7 @@ install_panel() {
     info "Installing Panel..."
     
      # Get configuration
+    PANEL_NAME=$(dialog --inputbox "Panel name" 8 40 "Airlink" 3>&1 1>&2 2>&3) || PANEL_NAME="Airlink"
     PANEL_PORT=$(dialog --inputbox "Panel Port" 8 40 "3000" 3>&1 1>&2 2>&3) || PANEL_PORT=3000
     clear
     # Clone and setup
@@ -127,7 +128,7 @@ install_panel() {
     rm example.env
     # Create .env
     cat > .env << EOF
-NAME="Airlink"
+NAME=${PANEL_NAME}
 NODE_ENV="development"
 URL="http://localhost:${PANEL_PORT}"
 PORT=${PANEL_PORT}
@@ -192,8 +193,10 @@ EOF
 install_daemon() {
     info "Installing Daemon..."
     
+    PANEL_ADDRESS=$(dialog --inputbox "Panel ip/hostname" 8 40 "127.0.0.1" 3>&1 1>&2 2>&3) || PANEL_ADDRESS="127.0.0.1"
     DAEMON_PORT=$(dialog --inputbox "Daemon Port" 8 40 "3002" 3>&1 1>&2 2>&3) || DAEMON_PORT=3002
     DAEMON_KEY=$(dialog --inputbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
+    
     clear
     info "Cloning Repo..."
     cd /etc || err "Cannot access /etc"
