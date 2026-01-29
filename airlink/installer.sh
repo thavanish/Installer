@@ -113,6 +113,8 @@ install_panel() {
     # Clone and setup
     info "Cloning Repo"
     cd /var/www || err "Cannot access /var/www"
+    info "Deleting your old panel folder if it exists last warning.. (wait 5 secs)"
+    sleep 5
     git clone -q --depth 1 https://github.com/thavanish/panel.git || err "Clone failed"
     cd panel
 
@@ -194,6 +196,9 @@ install_daemon() {
     clear
     info "Cloning Repo..."
     cd /etc || err "Cannot access /etc"
+    info "Deleting your old daemon folder if it exists last warning.. (wait 5 secs)"
+    sleep 5
+    rm -rf dameon
     git clone -q --depth 1 https://github.com/thavanish/daemon.git || err "Clone failed"
     cd daemon
     info "Creating .env"
