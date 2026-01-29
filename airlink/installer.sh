@@ -152,9 +152,10 @@ setup_docker() {
     info "Installing Docker..."
     case "$FAM" in
         debian|redhat) 
-            run_with_loading "Downloading and installing Docker" bash -c "curl -fsSL https://get.docker.com | sh"
-            ;;
+            run_with_loading "Downloading and installing Docker" bash -c "curl -fsSL https://get.docker.com | sh";;
+            
         arch) pkg_install docker;;
+        
         alpine) 
             pkg_install docker
             info "Adding Docker to boot..."
