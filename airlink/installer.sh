@@ -115,8 +115,12 @@ install_panel() {
     info "Cloning Repo"
     [ -d /var/www ] || mkdir /var/www
     cd /var/www || err "Cannot access /var/www"
-    info "Deleting your old panel folder if it exists last warning.. (wait 5 secs)"
-    sleep 5
+    info "Deleting your old panel folder if it exists last warning..."
+    for i in {5..1}; do
+        echo -ne "\rWaiting: $i seconds remaining..."
+        sleep 1
+    done
+    echo -e "\rProceeding...                    "
     git clone https://github.com/airlinklabs/panel.git&>/dev/null || err "Clone failed"
     cd panel
 
@@ -164,7 +168,7 @@ EOF
     npm run build  || err "Build failed"
     
     info "Seeding images..."
-    npm run seed
+    npm run seed &>/dev/null || err "Seeding failed"
     # Create systemd service
     info "Creating and starting Systemd service..."
     cat > /etc/systemd/system/airlink-panel.service << EOF
@@ -202,8 +206,12 @@ install_daemon() {
     clear
     info "Cloning Repo..."
     cd /etc || err "Cannot access /etc"
-    info "Deleting your old daemon folder if it exists last warning.. (wait 5 secs)"
-    sleep 5
+    info "Deleting your old panel folder if it exists last warning..."
+    for i in {5..1}; do
+        echo -ne "\rWaiting: $i seconds remaining..."
+        sleep 1
+    done
+    echo -e "\rProceeding...                    "
     rm -rf dameon
     git clone -q --depth 1 https://github.com/airlinklabs/daemon.git || err "Clone failed"
     cd daemon
