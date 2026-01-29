@@ -116,6 +116,12 @@ install_panel() {
     rm -rf panel
     git clone -q --depth 1 https://github.com/thavanish/panel.git || err "Clone failed"
     cd panel
+
+    # Set permissions
+    info "Setting permissions"
+    chown -R www-data:www-data /var/www/panel
+    chmod -R 755 /var/www/panel
+    
     info "Creating .env"
     rm example.env
     # Create .env
@@ -151,12 +157,8 @@ EOF
     CI=true npm run migrate:dev &>/dev/null || err "Migration failed"
     
     info "Building Panel..."
-    npm run build &>/dev/null || err "Build failed"
+    npm run build  || err "Build failed"
     
-    # Set permissions
-    info "Setting permissions"
-    chown -R www-data:www-data /var/www/panel
-    chmod -R 755 /var/www/panel
     
     # Create systemd service
     info "Creating and starting Systemd service..."
