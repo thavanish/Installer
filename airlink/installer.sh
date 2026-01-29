@@ -151,7 +151,7 @@ EOF
     CI=true npm run migrate:dev &>/dev/null || err "Migration failed"
     
     info "Building Panel..."
-    npm run build-ts &>/dev/null || err "Build failed"
+    npm run build &>/dev/null || err "Build failed"
     
     # Set permissions
     info "Setting permissions"
