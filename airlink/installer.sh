@@ -3,12 +3,15 @@
 set -euo pipefail
 
 # Configuration
-readonly VERSION="2.5.87-beta"
+readonly VERSION="2.5.93-beta"
 readonly LOG="/tmp/airlink.log"
 readonly NODE_VER="20"
 readonly TEMP="/tmp/airlink-tmp"
 readonly PRISMA_VER="6.19.1"
-
+readonly PANEL_REPO="https://github.com/airlinklabs/panel.git"
+readonly DAEMON_REPO="https://github.com/airlinklabs/daemon.git"
+readonly ADDON_ONE="--branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git modrinth-store"
+readonly ADDON_TWO="--branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git modrinth-store"
 # Colors
 R='\033[0;31m' G='\033[0;32m' Y='\033[1;33m' C='\033[0;36m' N='\033[0m'
 
@@ -217,7 +220,7 @@ install_panel() {
     
     rm -rf panel
     info "Cloning Panel repository..."
-    git clone https://github.com/airlinklabs/panel.git &>/dev/null &
+    git clone ${PANEL_REPO} &>/dev/null &
     show_loading $! "Cloning Panel repository"
     ok "Repository cloned"
     
@@ -326,7 +329,7 @@ install_daemon() {
     
     rm -rf daemon
     info "Cloning Daemon repository..."
-    git clone -q --depth 1 https://github.com/airlinklabs/daemon.git &>/dev/null &
+    git clone ${DAEMON_REPO} &>/dev/null &
     show_loading $! "Cloning Daemon repository"
     ok "Repository cloned"
     
@@ -521,7 +524,7 @@ install_modrinth() {
     info "Installing Modrinth addon..."
     cd /var/www/panel/storage/addons/
     info "Cloning Modrinth repository..."
-    git clone --branch modrinth-addon https://github.com/g-flame-oss/airlink-addons.git modrinth-store &>/dev/null &
+    git clone ${ADDON_ONE} &>/dev/null &
     show_loading $! "Cloning Modrinth repository"
     ok "Repository cloned"
     
@@ -537,7 +540,7 @@ install_parachute() {
     info "Installing Parachute addon..."
     cd /var/www/panel/storage/addons/
     info "Cloning Parachute repository..."
-    git clone --branch parachute https://github.com/g-flame-oss/airlink-addons.git parachute &>/dev/null &
+    git clone ${ADDON_TWO} &>/dev/null &
     show_loading $! "Cloning Parachute repository"
     ok "Repository cloned"
     
