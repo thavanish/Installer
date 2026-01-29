@@ -22,15 +22,14 @@ err() { echo -e "${R}[ERROR]${N} $*"; log "ERROR: $*"; exit 1; }
 # Loading spinner
 show_loading() {
     local pid=$1
-    local message=$2
     local spin='-\|/'
     local i=0
     while kill -0 $pid 2>/dev/null; do
         i=$(( (i+1) %4 ))
-        printf "\r ${spin:$i:1}"
+        printf "\r${spin:$i:1}"
         sleep .1
     done
-    printf "\rDone!\n"
+    printf "\r"
 }
 
 # Run command with loading indicator
@@ -44,11 +43,23 @@ run_with_loading() {
     wait $pid
     local status=$?
     if [ $status -eq 0 ]; then
-        ok "completed"
+        ok "$message completed"
     else
-        err "failed"
+        err "$message failed"
     fi
 }
+```
+
+**Changes:**
+1. Removed the `message` parameter from `show_loading` - it only shows the spinner now
+2. Removed `echo -n "$message "` and the message printing from `show_loading`
+3. Removed the second parameter when calling `show_loading $pid`
+
+Now it will show:
+```
+[INFO] Installing npm dependencies
+| (spinner animates here)
+[OK] Installing npm dependencies completed
 
 # Detect OS
 detect_os() {
