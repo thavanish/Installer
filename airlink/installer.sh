@@ -48,18 +48,7 @@ run_with_loading() {
         err "$message failed"
     fi
 }
-```
 
-**Changes:**
-1. Removed the `message` parameter from `show_loading` - it only shows the spinner now
-2. Removed `echo -n "$message "` and the message printing from `show_loading`
-3. Removed the second parameter when calling `show_loading $pid`
-
-Now it will show:
-```
-[INFO] Installing npm dependencies
-| (spinner animates here)
-[OK] Installing npm dependencies completed
 
 # Detect OS
 detect_os() {
@@ -125,15 +114,11 @@ setup_node() {
     
     case "$FAM" in
         debian)
-            info "Adding NodeSource repository..."
-            curl -fsSL "https://deb.nodesource.com/setup_${NODE_VER}.x" | bash - &>/dev/null &
-            show_loading $! "Adding NodeSource repository"
+            run_with_loading "Adding NodeSource repository" bash -c "curl -fsSL 'https://deb.nodesource.com/setup_${NODE_VER}.x' | bash -"
             pkg_install nodejs
             ;;
         redhat)
-            info "Adding NodeSource repository..."
-            curl -fsSL "https://rpm.nodesource.com/setup_${NODE_VER}.x" | bash - &>/dev/null &
-            show_loading $! "Adding NodeSource repository"
+            run_with_loading "Adding NodeSource repository" bash -c "curl -fsSL 'https://rpm.nodesource.com/setup_${NODE_VER}.x' | bash -"
             pkg_install nodejs
             ;;
         arch) pkg_install nodejs npm ;;
@@ -165,12 +150,10 @@ setup_docker() {
     info "Installing Docker..."
     case "$FAM" in
         debian|redhat) 
-            info "Downloading Docker installation script..."
-            curl -fsSL https://get.docker.com | sh &>/dev/null &
-            show_loading $! "Installing Docker"
+            run_with_loading "Downloading and installing Docker" bash -c "curl -fsSL https://get.docker.com | sh"
             ;;
         arch) pkg_install docker;;
-        alpine) 
+        alpine: 
             pkg_install docker
             info "Adding Docker to boot..."
             rc-update add docker boot &>/dev/null
