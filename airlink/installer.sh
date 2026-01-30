@@ -208,10 +208,87 @@ collect_all_config() {
     PANEL_ADDRESS=$(dialog --inputbox "Panel ip/hostname" 8 40 "127.0.0.1" 3>&1 1>&2 2>&3) || PANEL_ADDRESS="127.0.0.1"
     DAEMON_PORT=$(dialog --inputbox "Daemon Port" 8 40 "3002" 3>&1 1>&2 2>&3) || DAEMON_PORT=3002
     DAEMON_KEY=$(dialog --inputbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
+
+    # User configs
+    ADMIN_EMAIL=$(dialog --inputbox "Admin Email:" 8 50 "admin@example.com" 3>&1 1>&2 2>&3) || ADMIN_EMAIL="admin@example.com"
+    ADMIN_USERNAME=$(dialog --inputbox "Admin Username:" 8 50 "admin" 3>&1 1>&2 2>&3) || ADMIN_USERNAME="admin"
+    ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password:" 8 50 3>&1 1>&2 2>&3) || ADMIN_PASSWORD="admin123"
+ 
     
     clear
     ok "Configuration collected"
 }
+
+#### in testing...
+create_admin_user() {
+    info "Creating admin user..."
+    
+    # Get user details via dialog
+    ADMIN_EMAIL=$(dialog --inputbox "Admin Email:" 8 50 "admin@example.com" 3>&1 1>&2 2>&3) || ADMIN_EMAIL="admin@example.com"
+    ADMIN_USERNAME=$(dialog --inputbox "Admin Username:" 8 50 "admin" 3>&1 1>&2 2>&3) || ADMIN_USERNAME="admin"
+    ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password:" 8 50 3>&1 1>&2 2>&3) || ADMIN_PASSWORD="admin123"
+    
+    clear
+    
+    # Hash password using Node.js bcrypt
+    info "Hashing password..."
+    HASHED_PASSWORD=$(node -e "
+        const bcrypt = require('bcrypt');
+        bcrypt.hash('${ADMIN_PASSWORD}', 10).then(hash => console.log(hash));
+    " 2>/dev/null)
+    
+    if [ -z "$HASHED_PASSWORD" ]; then
+        warn "Bcrypt not found, installing..."
+        npm install bcrypt &>/dev/null || err "Failed to install bcrypt"
+        HASHED_PASSWORD=$(node -e "
+            const bcrypt = require('bcrypt');
+            bcrypt.hash('${ADMIN_PASSWORD}', 10).then(hash => console.log(hash));
+        ")
+    fi
+    
+    # Create user using Prisma
+    info "Creating user in database..."
+    node -e "
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+async function createUser() {
+    try {
+        const user = await prisma.users.create({
+            data: {
+                email: '${ADMIN_EMAIL}',
+                username: '${ADMIN_USERNAME}',
+                password: '${HASHED_PASSWORD}',
+                isAdmin: true,
+                description: 'System Administrator'
+            }
+        });
+        console.log('User created successfully:', user.email);
+    } catch (error) {
+        if (error.code === 'P2002') {
+            console.error('User already exists');
+            process.exit(1);
+        }
+        throw error;
+    } finally {
+        await prisma.\$disconnect();
+    }
+}
+
+createUser().catch(err => {
+    console.error('Error:', err.message);
+    process.exit(1);
+});
+" || warn "User creation failed - user may already exist"
+    
+    ok "Admin user setup complete"
+}
+
+
+
+
+
+
 
 # Panel installation
 install_panel() {
@@ -316,6 +393,13 @@ EOF
     systemctl daemon-reload
     systemctl enable --now airlink-panel &>/dev/null
     ok "Panel service started"
+
+    ##testing
+    if dialog --yesno "Create admin user now?" 7 40; then
+        clear
+        create_admin_user
+    fi
+    ##testing
 
     if [ "$skip_config" = false ]; then
         install_addons true  # Pass true when called from installation
