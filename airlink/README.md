@@ -37,6 +37,7 @@ journalctl -u airlink-daemon -f
 | Ubuntu           | 20.04 (Focal) | Yes       |
 |                  | 22.04 (Jammy) | Yes       |
 |                  | 24.04 (Noble) | Yes       |
+|                  | 25.10 (Questing Quokka)| Yes       |
 | Debian           | 10 (Buster)   | Yes       |
 |                  | 11 (Bullseye) | Yes       |
 |                  | 12 (Bookworm) | Yes       |
