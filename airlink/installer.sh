@@ -208,18 +208,11 @@ collect_all_config() {
     PANEL_ADDRESS=$(dialog --inputbox "Panel ip/hostname" 8 40 "127.0.0.1" 3>&1 1>&2 2>&3) || PANEL_ADDRESS="127.0.0.1"
     DAEMON_PORT=$(dialog --inputbox "Daemon Port" 8 40 "3002" 3>&1 1>&2 2>&3) || DAEMON_PORT=3002
     DAEMON_KEY=$(dialog --inputbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
-
-    # User configs
-   # ADMIN_EMAIL=$(dialog --inputbox "Admin Email:" 8 50 "admin@example.com" 3>&1 1>&2 2>&3) || ADMIN_EMAIL="admin@example.com"
-   # ADMIN_USERNAME=$(dialog --inputbox "Admin Username:" 8 50 "admin" 3>&1 1>&2 2>&3) || ADMIN_USERNAME="admin"
-   # ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password:" 8 50 3>&1 1>&2 2>&3) || ADMIN_PASSWORD="admin123"
- 
     
     clear
     ok "Configuration collected"
 }
 
-#### in testing...
 # Create admin user using the panel's registration API
 create_admin_user() {
     info "Creating admin user via registration API..."
@@ -230,7 +223,7 @@ create_admin_user() {
     
     # Password with validation
     while true; do
-        ADMIN_PASSWORD=$(dialog --inputbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+        ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
         
         # Validate password
         if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
@@ -311,195 +304,6 @@ create_admin_user() {
 
 # Panel installation
 install_panel() {
-    info "Installing Panel..."
-    
-    # Get configuration
-    PANEL_NAME=$(dialog --inputbox "Panel name" 8 40 "Airlink" 3>&1 1>&2 2>&3) || PANEL_NAME="Airlink"
-    PANEL_PORT=$(dialog --inputbox "Panel Port" 8 40 "3000" 3>&1 1>&2 2>&3) || PANEL_PORT=3000
-    clear
-    
-    # Clone and setup
-    info "Cloning Repo"
-    cd /var/www || err "Cannot access /var/www"
-    info "Deleting your old panel folder if it exists last warning.. (wait 5 secs)"
-    sleep 5
-    rm -rf panel
-    git clone https://github.com/thavanish/panel.git || err "Clone failed"
-    cd panel
-
-    # Set permissions
-    info "Setting permissions"
-    chown -R www-data:www-data /var/www/panel
-    chmod -R 755 /var/www/panel
-    
-    info "Creating .env"
-    rm -f example.env
-    # Create .env
-    cat > .env << EOF
-NAME=${PANEL_NAME}
-NODE_ENV="development"
-URL="http://localhost:${PANEL_PORT}"
-PORT=${PANEL_PORT}
-DATABASE_URL="file:./dev.db" 
-SESSION_SECRET=$(openssl rand -hex 32)
-EOF
-    
-    # Install and build
-    info "Installing dependencies..."
-    npm install --omit=dev &>/dev/null || err "npm install failed"
-    
-    # Install bcrypt for password hashing
-    info "Installing bcrypt..."
-    npm install bcrypt &>/dev/null || warn "Bcrypt install warning"
-    
-    if command -v prisma &>/dev/null; then
-        INSTALLED_VER=$(prisma -v | grep "prisma" | head -n1 | awk '{print $2}')
-        if [ "$INSTALLED_VER" = "$PRISMA_VER" ]; then
-            ok "Prisma $PRISMA_VER already installed, skipping"
-        else
-            info "Prisma version mismatch (found $INSTALLED_VER), reinstalling $PRISMA_VER"
-            npm uninstall -g prisma &>/dev/null
-            npm uninstall prisma @prisma/client &>/dev/null
-            npm cache clean --force &>/dev/null
-            npm install prisma@$PRISMA_VER @prisma/client@$PRISMA_VER &>/dev/null || err "Prisma install failed"
-        fi
-    else
-        info "Prisma not found, installing $PRISMA_VER"
-        npm install prisma@$PRISMA_VER @prisma/client@$PRISMA_VER &>/dev/null || err "Prisma install failed"
-    fi
-
-    info "Running migrations..."
-    CI=true npm run migrate:dev &>/dev/null || err "Migration failed"
-    
-    info "Building Panel..."
-    npm run build || err "Build failed"
-    
-    # Install and start PM2 temporarily for user creation
-    info "Installing PM2..."
-    npm install -g pm2 &>/dev/null || err "PM2 install failed"
-
-info "Starting panel temporarily with PM2..."
-cd /var/www/panel
-pm2 start npm --name "airlink-panel-temp" -- run start &>/dev/null
-
-# Wait for panel to initialize
-info "Waiting for panel to initialize..."
-sleep 10
-
-# Verify panel is running
-if curl -s "http://localhost:${PANEL_PORT}" > /dev/null 2>&1; then
-    ok "Panel is responding on port ${PANEL_PORT}"
-else
-    warn "Panel may not be fully started, waiting longer..."
-    sleep 5
-fi
-
-# Create admin user via API
-if dialog --yesno "Create admin user now?" 7 40; then
-    clear
-    create_admin_user || {
-        warn "Admin user creation failed"
-        SERVER_IP=$(hostname -I | awk '{print $1}')
-        info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
-    }
-fi
-
-# Disable registration after first user
-info "Disabling public registration..."
-node -e "
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-
-async function disableRegistration() {
-    try {
-        const settings = await prisma.settings.findFirst();
-        if (settings) {
-            await prisma.settings.update({
-                where: { id: settings.id },
-                data: { allowRegistration: false }
-            });
-        }
-        await prisma.\$disconnect();
-    } catch (error) {
-        await prisma.\$disconnect();
-    }
-}
-
-disableRegistration();
-" &>/dev/null
-
-# Stop temporary PM2 process
-info "Stopping temporary panel..."
-pm2 delete airlink-panel-temp &>/dev/null
-pm2 save --force &>/dev/null
-
-    
-    # Create systemd service
-    info "Creating and starting Systemd service..."
-    cat > /etc/systemd/system/airlink-panel.service << EOF
-[Unit]
-Description=Airlink Panel
-After=network.target
-
-[Service]
-Type=simple
-User=www-data
-WorkingDirectory=/var/www/panel
-ExecStart=/usr/bin/npm run start
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-EOF
-    
-    systemctl daemon-reload
-    systemctl enable --now airlink-panel &>/dev/null
-    
-    ok "Panel service started"
-    
-    # Create admin user via API
-    if dialog --yesno "Create admin user now?" 7 40; then
-        clear
-        create_admin_user || {
-            warn "Admin user creation failed"
-            SERVER_IP=$(hostname -I | awk '{print $1}')
-            info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
-        }
-    fi
-    
-    # Disable registration after first user
-    info "Disabling public registration..."
-    node -e "
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-
-async function disableRegistration() {
-    try {
-        const settings = await prisma.settings.findFirst();
-        if (settings) {
-            await prisma.settings.update({
-                where: { id: settings.id },
-                data: { allowRegistration: false }
-            });
-        }
-        await prisma.\$disconnect();
-    } catch (error) {
-        await prisma.\$disconnect();
-    }
-}
-
-disableRegistration();
-" &>/dev/null
-    
-    ok "Panel installed on port ${PANEL_PORT}"
-    
-    # Show final message
-    SERVER_IP=$(hostname -I | awk '{print $1}')
-    info "Access your panel at: http://${SERVER_IP}:${PANEL_PORT}/login"
-}
-
-# Panel installation
-install_panel() {
     local skip_config=${1:-false}
     
     info "Starting Panel installation..."
@@ -552,6 +356,10 @@ EOF
     # Install dependencies
     run_with_loading "Installing npm dependencies (this may take a while)" npm install --omit=dev
     
+    # Install bcrypt for password hashing
+    info "Installing bcrypt..."
+    npm install bcrypt &>/dev/null || warn "Bcrypt install warning"
+    
     # Install Prisma
     info "Checking Prisma installation..."
     if command -v prisma &>/dev/null; then
@@ -578,30 +386,101 @@ EOF
     
     run_with_loading "Seeding database with images" npm run seed
 
-    ## user setup 
-    # Check if any users exist
-    info "Checking for existing users..."
-    USER_COUNT=$(node -e "
+    # Enable registration temporarily
+    info "Enabling registration for first admin user..."
+    node -e "
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-prisma.users.count().then(count => {
-    console.log(count);
-    prisma.\$disconnect();
-}).catch(() => {
-    console.log(0);
-    process.exit(0);
-});
-" 2>/dev/null || echo "0")
 
-   if dialog --yesno "Create admin user now?" 7 40; then
-    clear
-    create_admin_user || {
-        warn "Admin user creation failed"
-        SERVER_IP=$(hostname -I | awk '{print $1}')
-        info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
+async function enableRegistration() {
+    try {
+        let settings = await prisma.settings.findFirst();
+        
+        if (!settings) {
+            await prisma.settings.create({
+                data: {
+                    allowRegistration: true,
+                    title: '${PANEL_NAME}',
+                    description: 'AirLink is a free and open source project by AirlinkLabs',
+                    logo: '../assets/logo.png',
+                    favicon: '../assets/favicon.ico',
+                    theme: 'default',
+                    language: 'en'
+                }
+            });
+        } else {
+            await prisma.settings.update({
+                where: { id: settings.id },
+                data: { allowRegistration: true }
+            });
+        }
+        await prisma.\$disconnect();
+    } catch (error) {
+        await prisma.\$disconnect();
     }
-fi
-    
+}
+
+enableRegistration();
+" &>/dev/null
+
+    # Install and start PM2 temporarily for user creation
+    info "Installing PM2..."
+    npm install -g pm2 &>/dev/null || err "PM2 install failed"
+
+    info "Starting panel temporarily with PM2..."
+    cd /var/www/panel
+    pm2 start npm --name "airlink-panel-temp" -- run start &>/dev/null
+
+    # Wait for panel to initialize
+    info "Waiting for panel to initialize..."
+    sleep 10
+
+    # Verify panel is running
+    if curl -s "http://localhost:${PANEL_PORT}" > /dev/null 2>&1; then
+        ok "Panel is responding on port ${PANEL_PORT}"
+    else
+        warn "Panel may not be fully started, waiting longer..."
+        sleep 5
+    fi
+
+    # Create admin user via API
+    if dialog --yesno "Create admin user now?" 7 40; then
+        clear
+        create_admin_user || {
+            warn "Admin user creation failed"
+            SERVER_IP=$(hostname -I | awk '{print $1}')
+            info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
+        }
+    fi
+
+    # Disable registration after first user
+    info "Disabling public registration..."
+    node -e "
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+async function disableRegistration() {
+    try {
+        const settings = await prisma.settings.findFirst();
+        if (settings) {
+            await prisma.settings.update({
+                where: { id: settings.id },
+                data: { allowRegistration: false }
+            });
+        }
+        await prisma.\$disconnect();
+    } catch (error) {
+        await prisma.\$disconnect();
+    }
+}
+
+disableRegistration();
+" &>/dev/null
+
+    # Stop temporary PM2 process
+    info "Stopping temporary panel..."
+    pm2 delete airlink-panel-temp &>/dev/null
+    pm2 save --force &>/dev/null
     
     # Create systemd service
     info "Creating systemd service..."
