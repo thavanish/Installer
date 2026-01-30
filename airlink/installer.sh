@@ -14,17 +14,11 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 ############################################################################ 
-#
-# ENVIRONMENT VARIABLES (optional):
-#   INSTALL_WEB_USER - Override web server user (default: auto-detect)
-#   INSTALL_WEB_GROUP - Override web server group (default: same as user)
-#
-############################################################################
 
 set -euo pipefail
 
 # Configuration
-readonly VERSION="3.0.3-Stable"
+readonly VERSION="3.0.6-Stable"
 readonly LOG="/tmp/airlink.log"
 readonly NODE_VER="20"
 readonly TEMP="/tmp/airlink-tmp"
@@ -124,57 +118,6 @@ check_systemd() {
     fi
 }
 
-# Detect or create web user/group
-detect_web_user() {
-    info "Detecting web server user..."
-    
-    # Check if user override is set
-    if [ -n "$INSTALL_WEB_USER" ]; then
-        WEB_USER="$INSTALL_WEB_USER"
-        WEB_GROUP="${INSTALL_WEB_GROUP:-$INSTALL_WEB_USER}"
-        info "Using configured user: $WEB_USER:$WEB_GROUP"
-        return 0
-    fi
-    
-    # Try common web server users in order
-    local users=("www-data" "apache" "nginx" "http" "httpd")
-    for user in "${users[@]}"; do
-        if id "$user" &>/dev/null; then
-            WEB_USER="$user"
-            # Get the primary group of the user
-            WEB_GROUP=$(id -gn "$user" 2>/dev/null || echo "$user")
-            ok "Found web user: $WEB_USER:$WEB_GROUP"
-            return 0
-        fi
-    done
-    
-    # No web user found, try to create one
-    warn "No standard web user found. Creating 'airlink' user..."
-    
-    case "$FAM" in
-        debian|arch)
-            useradd -r -s /bin/false -d /var/www -c "Airlink Web User" airlink 2>/dev/null || true
-            ;;
-        redhat)
-            useradd -r -s /sbin/nologin -d /var/www -c "Airlink Web User" airlink 2>/dev/null || true
-            ;;
-        alpine)
-            adduser -D -H -s /sbin/nologin -g "Airlink Web User" airlink 2>/dev/null || true
-            ;;
-    esac
-    
-    if id airlink &>/dev/null; then
-        WEB_USER="airlink"
-        WEB_GROUP="airlink"
-        ok "Created user: $WEB_USER:$WEB_GROUP"
-    else
-        # Last resort: use current user
-        warn "Could not create web user. Using current user: $(whoami)"
-        WEB_USER=$(whoami)
-        WEB_GROUP=$(id -gn)
-    fi
-}
-
 # Package installation
 pkg_install() {
     info "Installing packages: $*"
@@ -189,16 +132,13 @@ pkg_install() {
 
 # Check root
 [[ $EUID -eq 0 ]] || { dialog --msgbox "Run as root/sudo" 6 30 2>/dev/null || echo "Run as root"; exit 1; }
-clear
+ 
 
 # Detect system
 detect_os
 
 # Check for systemd (required for services)
 check_systemd
-
-# Detect appropriate web user
-detect_web_user
 
 # Install dependencies
 info "Checking dependencies..."
@@ -334,7 +274,7 @@ collect_all_config() {
     
     # Password with validation
     while true; do
-        ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+        ADMIN_PASSWORD=$(dialog --inputbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
         
         # Validate password
         if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
@@ -353,7 +293,7 @@ collect_all_config() {
     # Addon selection
     select_addons_for_install
     
-    clear
+     
     ok "Configuration collected"
 }
 
@@ -370,7 +310,7 @@ create_admin_user() {
         
         # Password with validation
         while true; do
-            ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+            ADMIN_PASSWORD=$(dialog --inputbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
             
             # Validate password
             if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
@@ -380,7 +320,7 @@ create_admin_user() {
             fi
         done
         
-        clear
+         
         
         # Validate username
         if [[ ! "$ADMIN_USERNAME" =~ ^[A-Za-z0-9]{3,20}$ ]]; then
@@ -491,7 +431,7 @@ install_panel() {
         
         # Password with validation
         while true; do
-            ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+            ADMIN_PASSWORD=$(dialog --inputbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
             
             # Validate password
             if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
@@ -510,7 +450,7 @@ install_panel() {
         # Select addons upfront
         select_addons_for_install
         
-        clear
+         
     fi
     
     # Clone and setup
@@ -532,7 +472,7 @@ install_panel() {
 
     # Set permissions
     info "Setting permissions..."
-    chown -R ${WEB_USER}:${WEB_GROUP} /var/www/panel
+    chown -R www-data:www-data /var/www/panel
     chmod -R 755 /var/www/panel
     ok "Permissions set"
     
@@ -641,21 +581,21 @@ EOFJS
     if [ "$skip_config" = false ]; then
         # Always use pre-collected variables (true) since we now collect them at the start
         create_admin_user true || {
-            warn "Admin user creation encountered an issue"
-            SERVER_IP=$(hostname -I | awk '{print $1}')
-            info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
+            #warn "Admin user creation encountered an issue"
+            #SERVER_IP=$(hostname -I | awk '{print $1}')
+            #info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
         }
     else
         # When skip_config is true (from install_all), create user automatically without prompting
-        clear
+         
         create_admin_user true || {
-            warn "Admin user creation encountered an issue"
-            SERVER_IP=$(hostname -I | awk '{print $1}')
-            info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
+            #warn "Admin user creation encountered an issue"
+            #SERVER_IP=$(hostname -I | awk '{print $1}')
+            #info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
         }
     fi
 
-    # Disable registration after first user - FIXED VERSION
+    # Disable registration after first user
     info "Disabling public registration..."
     cat > disable-reg.js << 'EOFJS'
 const { PrismaClient } = require('@prisma/client');
@@ -702,7 +642,7 @@ After=network.target
 
 [Service]
 Type=simple
-User=${WEB_USER}
+User=www-data
 WorkingDirectory=/var/www/panel
 ExecStart=/usr/bin/npm run start
 Restart=always
@@ -734,7 +674,7 @@ install_daemon() {
         PANEL_ADDRESS=$(dialog --inputbox "Panel ip/hostname" 8 40 "127.0.0.1" 3>&1 1>&2 2>&3) || PANEL_ADDRESS="127.0.0.1"
         DAEMON_PORT=$(dialog --inputbox "Daemon Port" 8 40 "3002" 3>&1 1>&2 2>&3) || DAEMON_PORT=3002
         DAEMON_KEY=$(dialog --inputbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
-        clear
+         
     fi
     
     info "Preparing directories..."
@@ -779,7 +719,7 @@ EOF
     cd ..
     
     info "Setting permissions..."
-    chown -R ${WEB_USER}:${WEB_GROUP} /etc/daemon
+    chown -R www-data:www-data /etc/daemon
     ok "Permissions set"
     
     # Create systemd service
@@ -792,7 +732,6 @@ After=network.target docker.service
 [Service]
 Type=simple
 User=root
-# Note: Daemon runs as root to manage Docker containers
 WorkingDirectory=/etc/daemon
 ExecStart=/usr/bin/npm run start
 Restart=always
@@ -826,7 +765,7 @@ install_all() {
     install_daemon true
     
     dialog --msgbox "Installation Complete!\n\nPanel: http://$(hostname -I | awk '{print $1}'):${PANEL_PORT}\nDaemon: Running on port ${DAEMON_PORT}\n\nCheck logs: journalctl -u airlink-panel -f" 14 60
-    clear
+     
     ok "Full installation completed successfully"
 }
 
@@ -984,7 +923,7 @@ install_addons() {
                 "${menu_items[@]}" 3>&1 1>&2 2>&3) || break
             
             if [ "$choice" -eq 0 ]; then
-                clear
+                 
                 break
             elif [ "$choice" -eq "$install_all_idx" ]; then
                 for addon in "${ADDONS[@]}"; do
@@ -995,7 +934,7 @@ install_addons() {
             fi
         done
     fi
-    clear
+     
 }
 
 # Main menu
@@ -1029,10 +968,10 @@ main_menu() {
                     remove_deps
                 };;
             10) [[ -f "$LOG" ]] && dialog --textbox "$LOG" 20 80 || dialog --msgbox "No logs found" 6 30;;
-            0) clear; echo -e "${G}Thanks for using Airlink Installer!${N}"; exit 0;;
+            0)  ; echo -e "${G}Thanks for using Airlink Installer!${N}"; exit 0;;
         esac
     done
-    clear
+     
 }
 
 # Cleanup on exit
@@ -1043,3 +982,5 @@ info "Starting Airlink Installer v${VERSION}..."
 touch "$LOG"
 log "=== Airlink Installer v${VERSION} started ==="
 main_menu
+
+# Heya there! what are you doing here?
