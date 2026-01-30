@@ -475,44 +475,7 @@ EOF
     ok "Panel build completed"
     
     run_with_loading "Seeding database with images" npm run seed
-
-    # Enable registration temporarily
-    info "Enabling registration for first admin user..."
-    node -e "
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-
-async function enableRegistration() {
-    try {
-        let settings = await prisma.settings.findFirst();
-        
-        if (!settings) {
-            await prisma.settings.create({
-                data: {
-                    allowRegistration: true,
-                    title: '${PANEL_NAME}',
-                    description: 'AirLink is a free and open source project by AirlinkLabs',
-                    logo: '../assets/logo.png',
-                    favicon: '../assets/favicon.ico',
-                    theme: 'default',
-                    language: 'en'
-                }
-            });
-        } else {
-            await prisma.settings.update({
-                where: { id: settings.id },
-                data: { allowRegistration: true }
-            });
-        }
-        await prisma.\$disconnect();
-    } catch (error) {
-        await prisma.\$disconnect();
-    }
-}
-
-enableRegistration();
-" &>/dev/null
-
+    
     # Install and start PM2 temporarily for user creation
     info "Installing PM2..."
     npm install -g pm2 &>/dev/null || err "PM2 install failed"
@@ -532,51 +495,6 @@ enableRegistration();
         warn "Panel may not be fully started, waiting longer..."
         sleep 5
     fi
-
-    # Create admin user via API (skip prompt if called from install_all)
-    if [ "$skip_config" = false ]; then
-        if dialog --yesno "Create admin user now?" 7 40; then
-            clear
-            # Always use pre-collected variables (true) since we now collect them at the start
-            create_admin_user true || {
-                warn "Admin user creation failed"
-                SERVER_IP=$(hostname -I | awk '{print $1}')
-                info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
-            }
-        fi
-    else
-        # When skip_config is true (from install_all), create user automatically without prompting
-        clear
-        create_admin_user true || {
-            warn "Admin user creation failed"
-            SERVER_IP=$(hostname -I | awk '{print $1}')
-            info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
-        }
-    fi
-
-    # Disable registration after first user
-    info "Disabling public registration..."
-    node -e "
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-
-async function disableRegistration() {
-    try {
-        const settings = await prisma.settings.findFirst();
-        if (settings) {
-            await prisma.settings.update({
-                where: { id: settings.id },
-                data: { allowRegistration: false }
-            });
-        }
-        await prisma.\$disconnect();
-    } catch (error) {
-        await prisma.\$disconnect();
-    }
-}
-
-disableRegistration();
-" &>/dev/null
 
     # Stop temporary PM2 process
     info "Stopping temporary panel..."
@@ -608,6 +526,7 @@ EOF
     ok "Panel service started"
 
     # Process addon selections (installs the addons that were selected at the start)
+    create_admin_user
     process_addon_selections
     
     ok "Panel installation completed on port ${PANEL_PORT}"
