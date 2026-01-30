@@ -230,7 +230,7 @@ create_admin_user() {
     
     # Password with validation
     while true; do
-        ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+        ADMIN_PASSWORD=$(dialog --inputbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
         
         # Validate password
         if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
@@ -374,32 +374,49 @@ EOF
     info "Building Panel..."
     npm run build || err "Build failed"
     
-    # Enable registration temporarily
-    info "Enabling registration for first admin user..."
-    node -e "
+    # Install and start PM2 temporarily for user creation
+    info "Installing PM2..."
+    npm install -g pm2 &>/dev/null || err "PM2 install failed"
+
+info "Starting panel temporarily with PM2..."
+cd /var/www/panel
+pm2 start npm --name "airlink-panel-temp" -- run start &>/dev/null
+
+# Wait for panel to initialize
+info "Waiting for panel to initialize..."
+sleep 10
+
+# Verify panel is running
+if curl -s "http://localhost:${PANEL_PORT}" > /dev/null 2>&1; then
+    ok "Panel is responding on port ${PANEL_PORT}"
+else
+    warn "Panel may not be fully started, waiting longer..."
+    sleep 5
+fi
+
+# Create admin user via API
+if dialog --yesno "Create admin user now?" 7 40; then
+    clear
+    create_admin_user || {
+        warn "Admin user creation failed"
+        SERVER_IP=$(hostname -I | awk '{print $1}')
+        info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
+    }
+fi
+
+# Disable registration after first user
+info "Disabling public registration..."
+node -e "
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-async function enableRegistration() {
+async function disableRegistration() {
     try {
-        let settings = await prisma.settings.findFirst();
-        
-        if (!settings) {
-            await prisma.settings.create({
-                data: {
-                    allowRegistration: true,
-                    title: '${PANEL_NAME}',
-                    description: 'AirLink is a free and open source project by AirlinkLabs',
-                    logo: '../assets/logo.png',
-                    favicon: '../assets/favicon.ico',
-                    theme: 'default',
-                    language: 'en'
-                }
-            });
-        } else {
+        const settings = await prisma.settings.findFirst();
+        if (settings) {
             await prisma.settings.update({
                 where: { id: settings.id },
-                data: { allowRegistration: true }
+                data: { allowRegistration: false }
             });
         }
         await prisma.\$disconnect();
@@ -408,8 +425,14 @@ async function enableRegistration() {
     }
 }
 
-enableRegistration();
+disableRegistration();
 " &>/dev/null
+
+# Stop temporary PM2 process
+info "Stopping temporary panel..."
+pm2 delete airlink-panel-temp &>/dev/null
+pm2 save --force &>/dev/null
+
     
     # Create systemd service
     info "Creating and starting Systemd service..."
