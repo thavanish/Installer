@@ -400,7 +400,6 @@ install_panel() {
         fi
         
         # Select addons upfront
-        create_admin_user true 
         select_addons_for_install
         
         clear
@@ -476,7 +475,44 @@ EOF
     ok "Panel build completed"
     
     run_with_loading "Seeding database with images" npm run seed
-    
+
+    # Enable registration temporarily
+    info "Enabling registration for first admin user..."
+    node -e "
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+async function enableRegistration() {
+    try {
+        let settings = await prisma.settings.findFirst();
+        
+        if (!settings) {
+            await prisma.settings.create({
+                data: {
+                    allowRegistration: true,
+                    title: '${PANEL_NAME}',
+                    description: 'AirLink is a free and open source project by AirlinkLabs',
+                    logo: '../assets/logo.png',
+                    favicon: '../assets/favicon.ico',
+                    theme: 'default',
+                    language: 'en'
+                }
+            });
+        } else {
+            await prisma.settings.update({
+                where: { id: settings.id },
+                data: { allowRegistration: true }
+            });
+        }
+        await prisma.\$disconnect();
+    } catch (error) {
+        await prisma.\$disconnect();
+    }
+}
+
+enableRegistration();
+" &>/dev/null
+
     # Install and start PM2 temporarily for user creation
     info "Installing PM2..."
     npm install -g pm2 &>/dev/null || err "PM2 install failed"
@@ -496,6 +532,37 @@ EOF
         warn "Panel may not be fully started, waiting longer..."
         sleep 5
     fi
+
+    # Create admin user via API (skip prompt if called from install_all)
+    if [ "$skip_config" = false ]; then
+        create_admin_user true
+    else
+        create_admin_user true    
+    fi
+
+    # Disable registration after first user
+    info "Disabling public registration..."
+    node -e "
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+async function disableRegistration() {
+    try {
+        const settings = await prisma.settings.findFirst();
+        if (settings) {
+            await prisma.settings.update({
+                where: { id: settings.id },
+                data: { allowRegistration: false }
+            });
+        }
+        await prisma.\$disconnect();
+    } catch (error) {
+        await prisma.\$disconnect();
+    }
+}
+
+disableRegistration();
+" &>/dev/null
 
     # Stop temporary PM2 process
     info "Stopping temporary panel..."
@@ -531,6 +598,7 @@ EOF
     
     ok "Panel installation completed on port ${PANEL_PORT}"
 }
+
 
 # Daemon installation
 install_daemon() {
