@@ -3,7 +3,7 @@ R#!/bin/bash
 set -euo pipefail
 
 # Configuration
-readonly VERSION="2.5.98-beta"
+readonly VERSION="3.0.0-Stable"
 readonly LOG="/tmp/airlink.log"
 readonly NODE_VER="20"
 readonly TEMP="/tmp/airlink-tmp"
