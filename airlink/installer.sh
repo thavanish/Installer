@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Configuration
-readonly VERSION="2.5.93-beta"
+readonly VERSION="2.5.95-beta"
 readonly LOG="/tmp/airlink.log"
 readonly NODE_VER="20"
 readonly TEMP="/tmp/airlink-tmp"
