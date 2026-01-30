@@ -444,7 +444,7 @@ EOF
     ok ".env file created"
     
     # Install dependencies
-    run_with_loading "Installing npm dependencies (this may take a while)" npm install --omit=dev
+    run_with_loading "Installing npm dependencies             " npm install --omit=dev
     
     # Install bcrypt for password hashing
     info "Installing bcrypt..."
