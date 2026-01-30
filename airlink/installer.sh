@@ -595,9 +595,9 @@ EOF
     systemctl enable --now airlink-panel &>/dev/null
     ok "Panel service started"
 
-    if [ "$skip_config" = false ]; then
-        install_addons true  # Pass true when called from installation
-    fi
+    # Process addon selections (installs the addons that were selected at the start)
+    process_addon_selections
+    
     ok "Panel installation completed on port ${PANEL_PORT}"
 }
 
