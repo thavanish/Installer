@@ -205,23 +205,24 @@ select_addons_for_install() {
     # Add individual addon options
     for addon in "${ADDONS[@]}"; do
         local display_name=$(get_addon_field "$addon" 1)
-        menu_items+=("$idx" "Install $display_name" off)
+        menu_items+=("$idx" "Install $display_name")
         ((idx++))
     done
     
     # Add "Install All" option
-    menu_items+=("$idx" "Install All Addons" off)
+    menu_items+=("$idx" "Install All Addons")
     local install_all_idx=$idx
     ((idx++))
     
     # Add skip option
-    menu_items+=("$idx" "Skip Addons" on)
+    menu_items+=("$idx" "Skip Addons")
+    local skip_idx=$idx
     
-    # Show checklist
-    ADDON_CHOICES=$(dialog --title "Select Addons to Install" \
-        --menu "Choose which addons to install :" \
+    # Show menu
+    ADDON_CHOICES=$(dialog --title "Select Addon to Install" \
+        --menu "Choose which addon to install:" \
         $((15 + ${#ADDONS[@]})) 70 $((${#ADDONS[@]} + 2)) \
-        "${menu_items[@]}" 3>&1 1>&2 2>&3) || ADDON_CHOICES=""
+        "${menu_items[@]}" 3>&1 1>&2 2>&3) || ADDON_CHOICES="$skip_idx"
 }
 
 # Collect all configuration upfront
@@ -243,7 +244,7 @@ collect_all_config() {
     
     # Password with validation
     while true; do
-        ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+        ADMIN_PASSWORD=$(dialog --inputbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
         
         # Validate password
         if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
@@ -279,7 +280,7 @@ create_admin_user() {
         
         # Password with validation
         while true; do
-            ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+            ADMIN_PASSWORD=$(dialog --inputbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
             
             # Validate password
             if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
@@ -382,7 +383,7 @@ install_panel() {
         
         # Password with validation
         while true; do
-            ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+            ADMIN_PASSWORD=$(dialog --inputbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
             
             # Validate password
             if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
@@ -782,13 +783,13 @@ process_addon_selections() {
         return
     fi
     
-    info "Installing selected addons..."
+    info "Processing addon selection..."
     
     local install_all_idx=$((${#ADDONS[@]} + 1))
     local skip_idx=$((${#ADDONS[@]} + 2))
     
     # Check if "Install All" was selected
-    if echo "$ADDON_CHOICES" | grep -q "\"$install_all_idx\""; then
+    if [ "$ADDON_CHOICES" = "$install_all_idx" ]; then
         for addon in "${ADDONS[@]}"; do
             install_single_addon "$addon"
         done
@@ -796,18 +797,15 @@ process_addon_selections() {
     fi
     
     # Check if "Skip" was selected
-    if echo "$ADDON_CHOICES" | grep -q "\"$skip_idx\""; then
+    if [ "$ADDON_CHOICES" = "$skip_idx" ]; then
         info "Skipping addon installation"
         return
     fi
     
-    # Install individually selected addons
-    for choice in $ADDON_CHOICES; do
-        choice=$(echo $choice | tr -d '"')
-        if [ "$choice" -le "${#ADDONS[@]}" ]; then
-            install_single_addon "${ADDONS[$((choice-1))]}"
-        fi
-    done
+    # Install the selected addon
+    if [ "$ADDON_CHOICES" -le "${#ADDONS[@]}" ]; then
+        install_single_addon "${ADDONS[$((ADDON_CHOICES-1))]}"
+    fi
 }
 
 # Generic addon installer
