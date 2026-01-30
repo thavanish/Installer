@@ -1,4 +1,4 @@
-#!/bin/bash
+R#!/bin/bash
 
 set -euo pipefail
 
@@ -348,7 +348,7 @@ create_admin_user() {
                     err "Password does not meet security requirements"
                     ;;
                 *)
-                    warn "Registration failed: $ERROR_TYPE"
+                    info "..."
                     ;;
             esac
             return 1
@@ -361,7 +361,7 @@ create_admin_user() {
             return 0
         fi
     else
-        warn "Registration request failed (HTTP ${HTTP_CODE})"
+        info "..."
         return 1
     fi
 }
@@ -535,15 +535,12 @@ enableRegistration();
 
     # Create admin user via API (skip prompt if called from install_all)
     if [ "$skip_config" = false ]; then
-        if dialog --yesno "Create admin user now?" 7 40; then
-            clear
             # Always use pre-collected variables (true) since we now collect them at the start
             create_admin_user true || {
                 warn "Admin user creation failed"
                 SERVER_IP=$(hostname -I | awk '{print $1}')
                 info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
             }
-        fi
     else
         # When skip_config is true (from install_all), create user automatically without prompting
         clear
