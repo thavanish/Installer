@@ -444,7 +444,7 @@ EOF
     ok ".env file created"
     
     # Install dependencies
-    run_with_loading "Installing npm dependencies             " npm install --omit=dev
+    run_with_loading "Installing npm dependencies (this may take a while)" npm install --omit=dev
     
     # Install bcrypt for password hashing
     info "Installing bcrypt..."
@@ -535,9 +535,18 @@ enableRegistration();
 
     # Create admin user via API (skip prompt if called from install_all)
     if [ "$skip_config" = false ]; then
-        create_admin_user true
+        create_admin_user true || {
+                warn "Admin user creation failed"
+                SERVER_IP=$(hostname -I | awk '{print $1}')
+                info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
+            }
     else
-        create_admin_user true    
+        # When skip_config is true (from install_all), create user automatically without prompting
+        create_admin_user true || {
+            warn "Admin user creation failed"
+            SERVER_IP=$(hostname -I | awk '{print $1}')
+            info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
+        }
     fi
 
     # Disable registration after first user
@@ -598,7 +607,6 @@ EOF
     
     ok "Panel installation completed on port ${PANEL_PORT}"
 }
-
 
 # Daemon installation
 install_daemon() {
