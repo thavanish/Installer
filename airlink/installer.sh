@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Configuration
-readonly VERSION="2.5.93-beta"
+readonly VERSION="2.5.98-beta"
 readonly LOG="/tmp/airlink.log"
 readonly NODE_VER="20"
 readonly TEMP="/tmp/airlink-tmp"
@@ -444,7 +444,7 @@ EOF
     ok ".env file created"
     
     # Install dependencies
-    run_with_loading "Installing npm dependencies (this may take a while)" npm install --omit=dev
+    run_with_loading "Installing npm dependencies" npm install --omit=dev
     
     # Install bcrypt for password hashing
     info "Installing bcrypt..."
@@ -658,7 +658,7 @@ STATS_INTERVAL=10000
 EOF
     ok ".env file created"
     
-    run_with_loading "Installing npm dependencies (this may take a while)" npm install --omit=dev
+    run_with_loading "Installing npm dependencies" npm install --omit=dev
     run_with_loading "Installing express" npm install express
     
     info "Building Daemon (this will show build output)..."
