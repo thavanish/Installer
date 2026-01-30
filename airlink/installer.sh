@@ -209,22 +209,12 @@ collect_all_config() {
     DAEMON_PORT=$(dialog --inputbox "Daemon Port" 8 40 "3002" 3>&1 1>&2 2>&3) || DAEMON_PORT=3002
     DAEMON_KEY=$(dialog --inputbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
     
-    clear
-    ok "Configuration collected"
-}
-
-# Create admin user using the panel's registration API
-create_admin_user() {
-    info "Creating admin user via registration API..."
-    
-    # Get user details via dialog
+    # Admin user configuration
     ADMIN_EMAIL=$(dialog --inputbox "Admin Email:" 8 50 "admin@example.com" 3>&1 1>&2 2>&3) || ADMIN_EMAIL="admin@example.com"
     ADMIN_USERNAME=$(dialog --inputbox "Admin Username (3-20 chars, letters/numbers only):" 8 60 "admin" 3>&1 1>&2 2>&3) || ADMIN_USERNAME="admin"
     
     # Password with validation
-    while true; do
-        ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
-        
+    while true; do        
         # Validate password
         if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
             break
@@ -233,12 +223,46 @@ create_admin_user() {
         fi
     done
     
-    clear
-    
     # Validate username
     if [[ ! "$ADMIN_USERNAME" =~ ^[A-Za-z0-9]{3,20}$ ]]; then
         warn "Invalid username format. Using default: admin"
         ADMIN_USERNAME="admin"
+    fi
+    
+    clear
+    ok "Configuration collected"
+}
+
+# Create admin user using the panel's registration API
+create_admin_user() {
+    local use_collected=${1:-false}
+    
+    info "Creating admin user via registration API..."
+    
+    # Get user details via dialog only if not already collected
+    if [ "$use_collected" = false ]; then
+        ADMIN_EMAIL=$(dialog --inputbox "Admin Email:" 8 50 "admin@example.com" 3>&1 1>&2 2>&3) || ADMIN_EMAIL="admin@example.com"
+        ADMIN_USERNAME=$(dialog --inputbox "Admin Username (3-20 chars, letters/numbers only):" 8 60 "admin" 3>&1 1>&2 2>&3) || ADMIN_USERNAME="admin"
+        
+        # Password with validation
+        while true; do
+            ADMIN_PASSWORD=$(dialog --inputbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+            
+            # Validate password
+            if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
+                break
+            else
+                dialog --msgbox "Password must be at least 8 characters with at least one letter and one number. Please try again." 8 60
+            fi
+        done
+        
+        clear
+        
+        # Validate username
+        if [[ ! "$ADMIN_USERNAME" =~ ^[A-Za-z0-9]{3,20}$ ]]; then
+            warn "Invalid username format. Using default: admin"
+            ADMIN_USERNAME="admin"
+        fi
     fi
     
     # Wait for panel to be fully running
@@ -386,7 +410,7 @@ EOF
     
     run_with_loading "Seeding database with images" npm run seed
 
-    # Enable registration temporarily
+    # Enable registration as a safeguard
     info "Enabling registration for first admin user..."
     node -e "
 const { PrismaClient } = require('@prisma/client');
@@ -446,36 +470,13 @@ enableRegistration();
     # Create admin user via API
     if dialog --yesno "Create admin user now?" 7 40; then
         clear
-        create_admin_user || {
+        # Pass true if config was already collected (skip_config mode)
+        create_admin_user $skip_config || {
             warn "Admin user creation failed"
             SERVER_IP=$(hostname -I | awk '{print $1}')
             info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
         }
     fi
-
-    # Disable registration after first user
-    info "Disabling public registration..."
-    node -e "
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-
-async function disableRegistration() {
-    try {
-        const settings = await prisma.settings.findFirst();
-        if (settings) {
-            await prisma.settings.update({
-                where: { id: settings.id },
-                data: { allowRegistration: false }
-            });
-        }
-        await prisma.\$disconnect();
-    } catch (error) {
-        await prisma.\$disconnect();
-    }
-}
-
-disableRegistration();
-" &>/dev/null
 
     # Stop temporary PM2 process
     info "Stopping temporary panel..."
