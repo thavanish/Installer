@@ -214,7 +214,9 @@ collect_all_config() {
     ADMIN_USERNAME=$(dialog --inputbox "Admin Username (3-20 chars, letters/numbers only):" 8 60 "admin" 3>&1 1>&2 2>&3) || ADMIN_USERNAME="admin"
     
     # Password with validation
-    while true; do        
+    while true; do
+        ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+        
         # Validate password
         if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
             break
@@ -246,7 +248,7 @@ create_admin_user() {
         
         # Password with validation
         while true; do
-            ADMIN_PASSWORD=$(dialog --inputbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+            ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
             
             # Validate password
             if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
@@ -259,6 +261,12 @@ create_admin_user() {
         clear
         
         # Validate username
+        if [[ ! "$ADMIN_USERNAME" =~ ^[A-Za-z0-9]{3,20}$ ]]; then
+            warn "Invalid username format. Using default: admin"
+            ADMIN_USERNAME="admin"
+        fi
+    else
+        # Using pre-collected variables, just validate username
         if [[ ! "$ADMIN_USERNAME" =~ ^[A-Za-z0-9]{3,20}$ ]]; then
             warn "Invalid username format. Using default: admin"
             ADMIN_USERNAME="admin"
@@ -332,10 +340,33 @@ install_panel() {
     
     info "Starting Panel installation..."
     
-    # Get configuration if not already collected
+    # Get ALL configuration upfront if not already collected
     if [ "$skip_config" = false ]; then
         PANEL_NAME=$(dialog --inputbox "Panel name" 8 40 "Airlink" 3>&1 1>&2 2>&3) || PANEL_NAME="Airlink"
         PANEL_PORT=$(dialog --inputbox "Panel Port" 8 40 "3000" 3>&1 1>&2 2>&3) || PANEL_PORT=3000
+        
+        # Collect admin user info upfront
+        ADMIN_EMAIL=$(dialog --inputbox "Admin Email:" 8 50 "admin@example.com" 3>&1 1>&2 2>&3) || ADMIN_EMAIL="admin@example.com"
+        ADMIN_USERNAME=$(dialog --inputbox "Admin Username (3-20 chars, letters/numbers only):" 8 60 "admin" 3>&1 1>&2 2>&3) || ADMIN_USERNAME="admin"
+        
+        # Password with validation
+        while true; do
+            ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+            
+            # Validate password
+            if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
+                break
+            else
+                dialog --msgbox "Password must be at least 8 characters with at least one letter and one number. Please try again." 8 60
+            fi
+        done
+        
+        # Validate username
+        if [[ ! "$ADMIN_USERNAME" =~ ^[A-Za-z0-9]{3,20}$ ]]; then
+            warn "Invalid username format. Using default: admin"
+            ADMIN_USERNAME="admin"
+        fi
+        
         clear
     fi
     
@@ -410,7 +441,7 @@ EOF
     
     run_with_loading "Seeding database with images" npm run seed
 
-    # Enable registration as a safeguard
+    # Enable registration temporarily
     info "Enabling registration for first admin user..."
     node -e "
 const { PrismaClient } = require('@prisma/client');
@@ -470,13 +501,37 @@ enableRegistration();
     # Create admin user via API
     if dialog --yesno "Create admin user now?" 7 40; then
         clear
-        # Pass true if config was already collected (skip_config mode)
-        create_admin_user $skip_config || {
+        # Always use pre-collected variables (true) since we now collect them at the start
+        create_admin_user true || {
             warn "Admin user creation failed"
             SERVER_IP=$(hostname -I | awk '{print $1}')
             info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
         }
     fi
+
+    # Disable registration after first user
+    info "Disabling public registration..."
+    node -e "
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+async function disableRegistration() {
+    try {
+        const settings = await prisma.settings.findFirst();
+        if (settings) {
+            await prisma.settings.update({
+                where: { id: settings.id },
+                data: { allowRegistration: false }
+            });
+        }
+        await prisma.\$disconnect();
+    } catch (error) {
+        await prisma.\$disconnect();
+    }
+}
+
+disableRegistration();
+" &>/dev/null
 
     # Stop temporary PM2 process
     info "Stopping temporary panel..."
