@@ -3,7 +3,7 @@
 set -euo pipefail
 
 # Configuration
-readonly VERSION="2.5.95-beta"
+readonly VERSION="2.5.93-beta"
 readonly LOG="/tmp/airlink.log"
 readonly NODE_VER="20"
 readonly TEMP="/tmp/airlink-tmp"
@@ -268,6 +268,7 @@ collect_all_config() {
 }
 
 # Create admin user using the panel's registration API
+# Create admin user using the panel's registration API
 create_admin_user() {
     local use_collected=${1:-false}
     
@@ -280,7 +281,7 @@ create_admin_user() {
         
         # Password with validation
         while true; do
-            ADMIN_PASSWORD=$(dialog --inputbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+            ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
             
             # Validate password
             if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
@@ -383,7 +384,7 @@ install_panel() {
         
         # Password with validation
         while true; do
-            ADMIN_PASSWORD=$(dialog --inputbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+            ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
             
             # Validate password
             if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
@@ -398,9 +399,6 @@ install_panel() {
             warn "Invalid username format. Using default: admin"
             ADMIN_USERNAME="admin"
         fi
-        
-        # Select addons upfront
-        select_addons_for_install
         
         clear
     fi
@@ -533,15 +531,10 @@ enableRegistration();
         sleep 5
     fi
 
-    # Create admin user via API (skip prompt if called from install_all)
-    if [ "$skip_config" = false ]; then
-        create_admin_user true || {
-                warn "Admin user creation failed"
-                SERVER_IP=$(hostname -I | awk '{print $1}')
-                info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
-            }
-    else
-        # When skip_config is true (from install_all), create user automatically without prompting
+    # Create admin user via API
+    if dialog --yesno "Create admin user now?" 7 40; then
+        clear
+        # Always use pre-collected variables (true) since we now collect them at the start
         create_admin_user true || {
             warn "Admin user creation failed"
             SERVER_IP=$(hostname -I | awk '{print $1}')
@@ -602,9 +595,9 @@ EOF
     systemctl enable --now airlink-panel &>/dev/null
     ok "Panel service started"
 
-    # Process addon selections (installs the addons that were selected at the start)
-    process_addon_selections
-    
+    if [ "$skip_config" = false ]; then
+        install_addons true  # Pass true when called from installation
+    fi
     ok "Panel installation completed on port ${PANEL_PORT}"
 }
 
