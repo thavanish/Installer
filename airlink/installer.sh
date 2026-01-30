@@ -400,6 +400,7 @@ install_panel() {
         fi
         
         # Select addons upfront
+        create_admin_user true 
         select_addons_for_install
         
         clear
@@ -526,7 +527,6 @@ EOF
     ok "Panel service started"
 
     # Process addon selections (installs the addons that were selected at the start)
-    create_admin_user
     process_addon_selections
     
     ok "Panel installation completed on port ${PANEL_PORT}"
