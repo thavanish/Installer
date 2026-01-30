@@ -219,7 +219,7 @@ select_addons_for_install() {
     
     # Show checklist
     ADDON_CHOICES=$(dialog --title "Select Addons to Install" \
-        --checklist "Choose which addons to install (Space to select, Enter to confirm):" \
+        --menu "Choose which addons to install :" \
         $((15 + ${#ADDONS[@]})) 70 $((${#ADDONS[@]} + 2)) \
         "${menu_items[@]}" 3>&1 1>&2 2>&3) || ADDON_CHOICES=""
 }
