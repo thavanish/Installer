@@ -210,9 +210,9 @@ collect_all_config() {
     DAEMON_KEY=$(dialog --inputbox "Daemon Auth Key" 8 40 3>&1 1>&2 2>&3) || DAEMON_KEY="get from panel's node setup page"
 
     # User configs
-    ADMIN_EMAIL=$(dialog --inputbox "Admin Email:" 8 50 "admin@example.com" 3>&1 1>&2 2>&3) || ADMIN_EMAIL="admin@example.com"
-    ADMIN_USERNAME=$(dialog --inputbox "Admin Username:" 8 50 "admin" 3>&1 1>&2 2>&3) || ADMIN_USERNAME="admin"
-    ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password:" 8 50 3>&1 1>&2 2>&3) || ADMIN_PASSWORD="admin123"
+   # ADMIN_EMAIL=$(dialog --inputbox "Admin Email:" 8 50 "admin@example.com" 3>&1 1>&2 2>&3) || ADMIN_EMAIL="admin@example.com"
+   # ADMIN_USERNAME=$(dialog --inputbox "Admin Username:" 8 50 "admin" 3>&1 1>&2 2>&3) || ADMIN_USERNAME="admin"
+   # ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password:" 8 50 3>&1 1>&2 2>&3) || ADMIN_PASSWORD="admin123"
  
     
     clear
@@ -220,75 +220,260 @@ collect_all_config() {
 }
 
 #### in testing...
+# Create admin user using the panel's registration API
 create_admin_user() {
-    info "Creating admin user..."
+    info "Creating admin user via registration API..."
     
     # Get user details via dialog
     ADMIN_EMAIL=$(dialog --inputbox "Admin Email:" 8 50 "admin@example.com" 3>&1 1>&2 2>&3) || ADMIN_EMAIL="admin@example.com"
-    ADMIN_USERNAME=$(dialog --inputbox "Admin Username:" 8 50 "admin" 3>&1 1>&2 2>&3) || ADMIN_USERNAME="admin"
-    ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password:" 8 50 3>&1 1>&2 2>&3) || ADMIN_PASSWORD="admin123"
+    ADMIN_USERNAME=$(dialog --inputbox "Admin Username (3-20 chars, letters/numbers only):" 8 60 "admin" 3>&1 1>&2 2>&3) || ADMIN_USERNAME="admin"
+    
+    # Password with validation
+    while true; do
+        ADMIN_PASSWORD=$(dialog --passwordbox "Admin Password (min 8 chars, must have letter & number):" 8 70 3>&1 1>&2 2>&3)
+        
+        # Validate password
+        if [[ ${#ADMIN_PASSWORD} -ge 8 ]] && [[ "$ADMIN_PASSWORD" =~ [A-Za-z] ]] && [[ "$ADMIN_PASSWORD" =~ [0-9] ]]; then
+            break
+        else
+            dialog --msgbox "Password must be at least 8 characters with at least one letter and one number. Please try again." 8 60
+        fi
+    done
     
     clear
     
-    # Hash password using Node.js bcrypt
-    info "Hashing password..."
-    HASHED_PASSWORD=$(node -e "
-        const bcrypt = require('bcrypt');
-        bcrypt.hash('${ADMIN_PASSWORD}', 10).then(hash => console.log(hash));
-    " 2>/dev/null)
-    
-    if [ -z "$HASHED_PASSWORD" ]; then
-        warn "Bcrypt not found, installing..."
-        npm install bcrypt &>/dev/null || err "Failed to install bcrypt"
-        HASHED_PASSWORD=$(node -e "
-            const bcrypt = require('bcrypt');
-            bcrypt.hash('${ADMIN_PASSWORD}', 10).then(hash => console.log(hash));
-        ")
+    # Validate username
+    if [[ ! "$ADMIN_USERNAME" =~ ^[A-Za-z0-9]{3,20}$ ]]; then
+        warn "Invalid username format. Using default: admin"
+        ADMIN_USERNAME="admin"
     fi
     
-    # Create user using Prisma
-    info "Creating user in database..."
+    # Wait for panel to be fully running
+    info "Waiting for panel to start..."
+    sleep 5
+    
+    # Get CSRF token first
+    info "Getting CSRF token..."
+    CSRF_TOKEN=$(curl -s -c /tmp/cookies.txt "http://localhost:${PANEL_PORT}/register" | grep -oP 'name="_csrf" value="\K[^"]+' || echo "")
+    
+    if [ -z "$CSRF_TOKEN" ]; then
+        warn "Could not get CSRF token, trying without it..."
+    fi
+    
+    # Make registration request
+    info "Registering admin user..."
+    RESPONSE=$(curl -s -b /tmp/cookies.txt -c /tmp/cookies.txt \
+        -X POST "http://localhost:${PANEL_PORT}/register" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "username=${ADMIN_USERNAME}&email=${ADMIN_EMAIL}&password=${ADMIN_PASSWORD}&_csrf=${CSRF_TOKEN}" \
+        -w "\n%{http_code}" \
+        -L)
+    
+    HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+    BODY=$(echo "$RESPONSE" | head -n-1)
+    
+    # Clean up cookies
+    rm -f /tmp/cookies.txt
+    
+    # Check response
+    if [[ "$HTTP_CODE" == "302" ]] || [[ "$HTTP_CODE" == "200" ]]; then
+        # Check if redirected to error
+        if echo "$BODY" | grep -q "err="; then
+            ERROR_TYPE=$(echo "$BODY" | grep -oP 'err=\K[^&"]+' | head -1)
+            case "$ERROR_TYPE" in
+                "user_already_exists")
+                    warn "User already exists with this email/username"
+                    ;;
+                "invalid_username")
+                    err "Invalid username format"
+                    ;;
+                "weak_password")
+                    err "Password does not meet security requirements"
+                    ;;
+                *)
+                    warn "Registration failed: $ERROR_TYPE"
+                    ;;
+            esac
+            return 1
+        else
+            ok "Admin user created successfully!"
+            info "Login credentials:"
+            echo -e "  ${C}Username:${N} ${ADMIN_USERNAME}"
+            echo -e "  ${C}Email:${N} ${ADMIN_EMAIL}"
+            sleep 3
+            return 0
+        fi
+    else
+        warn "Registration request failed (HTTP ${HTTP_CODE})"
+        return 1
+    fi
+}
+
+# Panel installation
+install_panel() {
+    info "Installing Panel..."
+    
+    # Get configuration
+    PANEL_NAME=$(dialog --inputbox "Panel name" 8 40 "Airlink" 3>&1 1>&2 2>&3) || PANEL_NAME="Airlink"
+    PANEL_PORT=$(dialog --inputbox "Panel Port" 8 40 "3000" 3>&1 1>&2 2>&3) || PANEL_PORT=3000
+    clear
+    
+    # Clone and setup
+    info "Cloning Repo"
+    cd /var/www || err "Cannot access /var/www"
+    info "Deleting your old panel folder if it exists last warning.. (wait 5 secs)"
+    sleep 5
+    rm -rf panel
+    git clone https://github.com/thavanish/panel.git || err "Clone failed"
+    cd panel
+
+    # Set permissions
+    info "Setting permissions"
+    chown -R www-data:www-data /var/www/panel
+    chmod -R 755 /var/www/panel
+    
+    info "Creating .env"
+    rm -f example.env
+    # Create .env
+    cat > .env << EOF
+NAME=${PANEL_NAME}
+NODE_ENV="development"
+URL="http://localhost:${PANEL_PORT}"
+PORT=${PANEL_PORT}
+DATABASE_URL="file:./dev.db" 
+SESSION_SECRET=$(openssl rand -hex 32)
+EOF
+    
+    # Install and build
+    info "Installing dependencies..."
+    npm install --omit=dev &>/dev/null || err "npm install failed"
+    
+    # Install bcrypt for password hashing
+    info "Installing bcrypt..."
+    npm install bcrypt &>/dev/null || warn "Bcrypt install warning"
+    
+    if command -v prisma &>/dev/null; then
+        INSTALLED_VER=$(prisma -v | grep "prisma" | head -n1 | awk '{print $2}')
+        if [ "$INSTALLED_VER" = "$PRISMA_VER" ]; then
+            ok "Prisma $PRISMA_VER already installed, skipping"
+        else
+            info "Prisma version mismatch (found $INSTALLED_VER), reinstalling $PRISMA_VER"
+            npm uninstall -g prisma &>/dev/null
+            npm uninstall prisma @prisma/client &>/dev/null
+            npm cache clean --force &>/dev/null
+            npm install prisma@$PRISMA_VER @prisma/client@$PRISMA_VER &>/dev/null || err "Prisma install failed"
+        fi
+    else
+        info "Prisma not found, installing $PRISMA_VER"
+        npm install prisma@$PRISMA_VER @prisma/client@$PRISMA_VER &>/dev/null || err "Prisma install failed"
+    fi
+
+    info "Running migrations..."
+    CI=true npm run migrate:dev &>/dev/null || err "Migration failed"
+    
+    info "Building Panel..."
+    npm run build || err "Build failed"
+    
+    # Enable registration temporarily
+    info "Enabling registration for first admin user..."
     node -e "
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-async function createUser() {
+async function enableRegistration() {
     try {
-        const user = await prisma.users.create({
-            data: {
-                email: '${ADMIN_EMAIL}',
-                username: '${ADMIN_USERNAME}',
-                password: '${HASHED_PASSWORD}',
-                isAdmin: true,
-                description: 'System Administrator'
-            }
-        });
-        console.log('User created successfully:', user.email);
-    } catch (error) {
-        if (error.code === 'P2002') {
-            console.error('User already exists');
-            process.exit(1);
+        let settings = await prisma.settings.findFirst();
+        
+        if (!settings) {
+            await prisma.settings.create({
+                data: {
+                    allowRegistration: true,
+                    title: '${PANEL_NAME}',
+                    description: 'AirLink is a free and open source project by AirlinkLabs',
+                    logo: '../assets/logo.png',
+                    favicon: '../assets/favicon.ico',
+                    theme: 'default',
+                    language: 'en'
+                }
+            });
+        } else {
+            await prisma.settings.update({
+                where: { id: settings.id },
+                data: { allowRegistration: true }
+            });
         }
-        throw error;
-    } finally {
+        await prisma.\$disconnect();
+    } catch (error) {
         await prisma.\$disconnect();
     }
 }
 
-createUser().catch(err => {
-    console.error('Error:', err.message);
-    process.exit(1);
-});
-" || warn "User creation failed - user may already exist"
+enableRegistration();
+" &>/dev/null
     
-    ok "Admin user setup complete"
+    # Create systemd service
+    info "Creating and starting Systemd service..."
+    cat > /etc/systemd/system/airlink-panel.service << EOF
+[Unit]
+Description=Airlink Panel
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/panel
+ExecStart=/usr/bin/npm run start
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    systemctl daemon-reload
+    systemctl enable --now airlink-panel &>/dev/null
+    
+    ok "Panel service started"
+    
+    # Create admin user via API
+    if dialog --yesno "Create admin user now?" 7 40; then
+        clear
+        create_admin_user || {
+            warn "Admin user creation failed"
+            SERVER_IP=$(hostname -I | awk '{print $1}')
+            info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
+        }
+    fi
+    
+    # Disable registration after first user
+    info "Disabling public registration..."
+    node -e "
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
+async function disableRegistration() {
+    try {
+        const settings = await prisma.settings.findFirst();
+        if (settings) {
+            await prisma.settings.update({
+                where: { id: settings.id },
+                data: { allowRegistration: false }
+            });
+        }
+        await prisma.\$disconnect();
+    } catch (error) {
+        await prisma.\$disconnect();
+    }
 }
 
-
-
-
-
-
+disableRegistration();
+" &>/dev/null
+    
+    ok "Panel installed on port ${PANEL_PORT}"
+    
+    # Show final message
+    SERVER_IP=$(hostname -I | awk '{print $1}')
+    info "Access your panel at: http://${SERVER_IP}:${PANEL_PORT}/login"
+}
 
 # Panel installation
 install_panel() {
@@ -369,6 +554,31 @@ EOF
     ok "Panel build completed"
     
     run_with_loading "Seeding database with images" npm run seed
+
+    ## user setup 
+    # Check if any users exist
+    info "Checking for existing users..."
+    USER_COUNT=$(node -e "
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+prisma.users.count().then(count => {
+    console.log(count);
+    prisma.\$disconnect();
+}).catch(() => {
+    console.log(0);
+    process.exit(0);
+});
+" 2>/dev/null || echo "0")
+
+   if dialog --yesno "Create admin user now?" 7 40; then
+    clear
+    create_admin_user || {
+        warn "Admin user creation failed"
+        SERVER_IP=$(hostname -I | awk '{print $1}')
+        info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
+    }
+fi
+    
     
     # Create systemd service
     info "Creating systemd service..."
@@ -393,13 +603,6 @@ EOF
     systemctl daemon-reload
     systemctl enable --now airlink-panel &>/dev/null
     ok "Panel service started"
-
-    ##testing
-    if dialog --yesno "Create admin user now?" 7 40; then
-        clear
-        create_admin_user
-    fi
-    ##testing
 
     if [ "$skip_config" = false ]; then
         install_addons true  # Pass true when called from installation
