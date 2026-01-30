@@ -196,6 +196,34 @@ setup_docker() {
     fi
 }
 
+# Select addons for installation (stores selection, doesn't install)
+select_addons_for_install() {
+    # Build dynamic menu items
+    local menu_items=()
+    local idx=1
+    
+    # Add individual addon options
+    for addon in "${ADDONS[@]}"; do
+        local display_name=$(get_addon_field "$addon" 1)
+        menu_items+=("$idx" "Install $display_name" off)
+        ((idx++))
+    done
+    
+    # Add "Install All" option
+    menu_items+=("$idx" "Install All Addons" off)
+    local install_all_idx=$idx
+    ((idx++))
+    
+    # Add skip option
+    menu_items+=("$idx" "Skip Addons" on)
+    
+    # Show checklist
+    ADDON_CHOICES=$(dialog --title "Select Addons to Install" \
+        --checklist "Choose which addons to install (Space to select, Enter to confirm):" \
+        $((15 + ${#ADDONS[@]})) 70 $((${#ADDONS[@]} + 2)) \
+        "${menu_items[@]}" 3>&1 1>&2 2>&3) || ADDON_CHOICES=""
+}
+
 # Collect all configuration upfront
 collect_all_config() {
     info "Collecting configuration for all components..."
@@ -230,6 +258,9 @@ collect_all_config() {
         warn "Invalid username format. Using default: admin"
         ADMIN_USERNAME="admin"
     fi
+    
+    # Addon selection
+    select_addons_for_install
     
     clear
     ok "Configuration collected"
@@ -367,6 +398,9 @@ install_panel() {
             ADMIN_USERNAME="admin"
         fi
         
+        # Select addons upfront
+        select_addons_for_install
+        
         clear
     fi
     
@@ -498,10 +532,20 @@ enableRegistration();
         sleep 5
     fi
 
-    # Create admin user via API
-    if dialog --yesno "Create admin user now?" 7 40; then
+    # Create admin user via API (skip prompt if called from install_all)
+    if [ "$skip_config" = false ]; then
+        if dialog --yesno "Create admin user now?" 7 40; then
+            clear
+            # Always use pre-collected variables (true) since we now collect them at the start
+            create_admin_user true || {
+                warn "Admin user creation failed"
+                SERVER_IP=$(hostname -I | awk '{print $1}')
+                info "You can create it manually at: http://${SERVER_IP}:${PANEL_PORT}/register"
+            }
+        fi
+    else
+        # When skip_config is true (from install_all), create user automatically without prompting
         clear
-        # Always use pre-collected variables (true) since we now collect them at the start
         create_admin_user true || {
             warn "Admin user creation failed"
             SERVER_IP=$(hostname -I | awk '{print $1}')
@@ -562,9 +606,9 @@ EOF
     systemctl enable --now airlink-panel &>/dev/null
     ok "Panel service started"
 
-    if [ "$skip_config" = false ]; then
-        install_addons true  # Pass true when called from installation
-    fi
+    # Process addon selections (installs the addons that were selected at the start)
+    process_addon_selections
+    
     ok "Panel installation completed on port ${PANEL_PORT}"
 }
 
@@ -672,9 +716,6 @@ install_all() {
     install_panel true
     install_daemon true
     
-    # Ask about addons at the end
-    install_addons true
-    
     dialog --msgbox "Installation Complete!\n\nPanel: http://$(hostname -I | awk '{print $1}'):3000\nDaemon: Running on port 3002\n\nCheck logs: journalctl -u airlink-panel -f" 14 60
     clear
     ok "Full installation completed successfully"
@@ -732,6 +773,41 @@ remove_deps() {
             ;;
     esac
     ok "Dependencies removed successfully"
+}
+
+# Process previously selected addons
+process_addon_selections() {
+    if [ -z "$ADDON_CHOICES" ]; then
+        info "No addons selected, skipping..."
+        return
+    fi
+    
+    info "Installing selected addons..."
+    
+    local install_all_idx=$((${#ADDONS[@]} + 1))
+    local skip_idx=$((${#ADDONS[@]} + 2))
+    
+    # Check if "Install All" was selected
+    if echo "$ADDON_CHOICES" | grep -q "\"$install_all_idx\""; then
+        for addon in "${ADDONS[@]}"; do
+            install_single_addon "$addon"
+        done
+        return
+    fi
+    
+    # Check if "Skip" was selected
+    if echo "$ADDON_CHOICES" | grep -q "\"$skip_idx\""; then
+        info "Skipping addon installation"
+        return
+    fi
+    
+    # Install individually selected addons
+    for choice in $ADDON_CHOICES; do
+        choice=$(echo $choice | tr -d '"')
+        if [ "$choice" -le "${#ADDONS[@]}" ]; then
+            install_single_addon "${ADDONS[$((choice-1))]}"
+        fi
+    done
 }
 
 # Generic addon installer
